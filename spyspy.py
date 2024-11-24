@@ -19,7 +19,7 @@ EMERGING_MARKETS = {
 def get_foreign_reserves(country_code):
     """
     Fetch foreign reserves data from World Bank
-    Indicator: FI.RES.TOTL.CD (Total reserves including gold)
+    Indicator: FM.AST.CGLD.M (Total Reserves minus Gold, Monthly)
     """
     try:
         # Calculate last 10 years
@@ -29,12 +29,12 @@ def get_foreign_reserves(country_code):
         # World Bank API parameters
         params = {
             'format': 'json',
-            'per_page': 100,
-            'date': f'{start_year}:{end_year}'
+            'per_page': 500,  # Increased to accommodate monthly data
+            'date': f'{start_year}M01:{end_year}M12'  # Monthly format
         }
         
         # Make API request
-        url = f"{WB_API_ENDPOINT}/country/{country_code}/indicator/FI.RES.TOTL.CD"
+        url = f"{WB_API_ENDPOINT}/country/{country_code}/indicator/FM.AST.CGLD.M"
         response = requests.get(url, params=params)
         response.raise_for_status()
         
@@ -42,8 +42,9 @@ def get_foreign_reserves(country_code):
         data = response.json()[1]
         
         if not data:
-            st.error(f"No data available for {country_code}")
-            return None
+            st.error(f"No monthly data available for {country_code}")
+            # Try annual data as fallback
+            return get_annual_reserves(country_code)
             
         # Convert to DataFrame
         df = pd.DataFrame(data)
@@ -51,7 +52,7 @@ def get_foreign_reserves(country_code):
         # Clean up the data
         df = df[['date', 'value']].copy()
         df['value'] = pd.to_numeric(df['value'], errors='coerce')
-        df['date'] = pd.to_datetime(df['date'], format='%Y')
+        df['date'] = pd.to_datetime(df['date'], format='%YM%m')
         
         # Sort by date
         df = df.sort_values('date')
@@ -62,8 +63,47 @@ def get_foreign_reserves(country_code):
         return df
         
     except Exception as e:
-        st.error(f"Error fetching data: {e}")
-        st.write("Full error:", str(e))
+        st.error(f"Error fetching monthly data: {e}")
+        # Try annual data as fallback
+        return get_annual_reserves(country_code)
+
+def get_annual_reserves(country_code):
+    """
+    Fallback function to get annual data
+    Indicator: FI.RES.TOTL.CD (Total reserves including gold, Annual)
+    """
+    try:
+        end_year = datetime.now().year
+        start_year = end_year - 10
+        
+        params = {
+            'format': 'json',
+            'per_page': 100,
+            'date': f'{start_year}:{end_year}'
+        }
+        
+        url = f"{WB_API_ENDPOINT}/country/{country_code}/indicator/FI.RES.TOTL.CD"
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        
+        data = response.json()[1]
+        
+        if not data:
+            st.error(f"No data available for {country_code}")
+            return None
+            
+        df = pd.DataFrame(data)
+        df = df[['date', 'value']].copy()
+        df['value'] = pd.to_numeric(df['value'], errors='coerce')
+        df['date'] = pd.to_datetime(df['date'], format='%Y')
+        df = df.sort_values('date')
+        df['value'] = df['value'] / 1_000_000
+        
+        st.info("Only annual data available for this country")
+        return df
+        
+    except Exception as e:
+        st.error(f"Error fetching annual data: {e}")
         return None
 
 # Streamlit UI
@@ -85,7 +125,18 @@ if search_term and filtered_countries:
     
     # Get country code and fetch data
     country_code = EMERGING_MARKETS[selected_country]
-    data = get_foreign_reserves(country_code)
+    
+    # Add this to the UI section
+    frequency = st.selectbox(
+        "Select data frequency:",
+        ["Monthly", "Annual"]
+    )
+    
+    # Modify the data fetch based on frequency
+    if frequency == "Monthly":
+        data = get_foreign_reserves(country_code)
+    else:
+        data = get_annual_reserves(country_code)
     
     if data is not None:
         # Create plot using plotly
@@ -94,15 +145,19 @@ if search_term and filtered_countries:
             x='date',
             y='value',
             title=f'Foreign Reserves for {selected_country}',
-            labels={'value': 'Reserves (USD Millions)', 'date': 'Year'}
+            labels={'value': 'Reserves (USD Millions)', 'date': 'Date'}
         )
         
-        # Customize layout
+        # Customize layout for monthly data
         fig.update_layout(
             hovermode='x unified',
             yaxis_title="USD (Millions)",
-            xaxis_title="Year"
+            xaxis_title="Date",
+            xaxis_tickformat='%Y-%m'  # Format x-axis to show year-month
         )
+        
+        # Add range slider
+        fig.update_xaxes(rangeslider_visible=True)
         
         # Display plot
         st.plotly_chart(fig)
