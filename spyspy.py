@@ -1,163 +1,83 @@
 import streamlit as st
+import yfinance as yf
 import pandas as pd
-import requests
-from datetime import datetime, timedelta
 import plotly.express as px
+from datetime import datetime, timedelta
 
-# DBnomics API endpoint
-DBNOM_API_ENDPOINT = "https://api.db.nomics.world/v22"
-
-# Dictionary of emerging market countries with their ISO codes and providers
-EMERGING_MARKETS = {
-    'Brazil': {'code': 'BR', 'provider': 'IMF', 'dataset': 'IFS'},
-    'China': {'code': 'CN', 'provider': 'IMF', 'dataset': 'IFS'},
-    'India': {'code': 'IN', 'provider': 'IMF', 'dataset': 'IFS'},
-    'Russia': {'code': 'RU', 'provider': 'IMF', 'dataset': 'IFS'},
-    'South Africa': {'code': 'ZA', 'provider': 'IMF', 'dataset': 'IFS'},
-    'Mexico': {'code': 'MX', 'provider': 'IMF', 'dataset': 'IFS'},
-    'Indonesia': {'code': 'ID', 'provider': 'IMF', 'dataset': 'IFS'},
-    'Turkey': {'code': 'TR', 'provider': 'IMF', 'dataset': 'IFS'},
-    'Thailand': {'code': 'TH', 'provider': 'IMF', 'dataset': 'IFS'},
-    'Malaysia': {'code': 'MY', 'provider': 'IMF', 'dataset': 'IFS'},
-    'Philippines': {'code': 'PH', 'provider': 'IMF', 'dataset': 'IFS'},
-    'Poland': {'code': 'PL', 'provider': 'IMF', 'dataset': 'IFS'},
-    'Vietnam': {'code': 'VN', 'provider': 'IMF', 'dataset': 'IFS'},
-    'Chile': {'code': 'CL', 'provider': 'IMF', 'dataset': 'IFS'},
-    'Colombia': {'code': 'CO', 'provider': 'IMF', 'dataset': 'IFS'},
-    'Peru': {'code': 'PE', 'provider': 'IMF', 'dataset': 'IFS'}
+# Dictionary of MSCI Emerging Markets ETFs
+EM_ETFS = {
+    'iShares MSCI Emerging Markets ETF': 'EEM',
+    'Vanguard FTSE Emerging Markets ETF': 'VWO',
+    'iShares Core MSCI Emerging Markets ETF': 'IEMG',
+    'SPDR Portfolio Emerging Markets ETF': 'SPEM',
+    'Schwab Emerging Markets Equity ETF': 'SCHE',
+    'iShares MSCI Brazil ETF': 'EWZ',
+    'iShares MSCI China ETF': 'MCHI',
+    'iShares MSCI India ETF': 'INDA',
+    'iShares MSCI South Korea ETF': 'EWY',
+    'iShares MSCI Taiwan ETF': 'EWT',
+    'iShares MSCI South Africa ETF': 'EZA',
+    'iShares MSCI Mexico ETF': 'EWW'
 }
 
-# Alternative indicators to try
-RESERVE_INDICATORS = [
-    'RAXG_USD',  # Reserves excluding gold
-    'RASA_USD',  # Total reserves
-    'RAFAB_USD'  # Foreign assets
-]
-
-def get_foreign_reserves(country_info):
+def get_etf_data(ticker):
     """
-    Fetch foreign reserves data from DBnomics
+    Fetch ETF data from Yahoo Finance
     """
     try:
-        # Try different frequency codes (Monthly, Quarterly)
-        frequencies = ['M', 'Q']
+        # Get data for last 10 years
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=365*10)
         
-        for freq in frequencies:
-            # Construct the API URL with series query
-            url = f"{DBNOM_API_ENDPOINT}/series"
-            
-            # Parameters for the API request
-            params = {
-                'provider_code': 'IMF',
-                'dataset_code': 'IFS',
-                'dimensions': {
-                    'REF_AREA': country_info['code'],
-                    'FREQ': freq,
-                    'INDICATOR': 'RAXG_USD'
-                },
-                'limit': 1000,
-                'format': 'json',
-                'observations': True
-            }
-            
-            # Debug info
-            st.write(f"Trying {freq} frequency data...")
-            
-            # Make API request
-            response = requests.get(url, params=params)
-            
-            # Debug response
-            st.write("Response status:", response.status_code)
-            st.write("Response URL:", response.url)
-            
-            if response.status_code != 200:
-                st.write(f"Failed to fetch {freq} frequency data")
-                continue
-                
-            data = response.json()
-            
-            # Check if we have valid data
-            if ('series' in data and 
-                data['series'] and 
-                'observations' in data['series'][0] and 
-                data['series'][0]['observations']):
-                
-                # Extract the time series data
-                observations = data['series'][0]['observations']
-                
-                # Create DataFrame
-                df = pd.DataFrame(observations)
-                df.columns = ['date', 'value']
-                
-                # Convert to datetime and numeric
-                df['date'] = pd.to_datetime(df['date'])
-                df['value'] = pd.to_numeric(df['value'], errors='coerce')
-                
-                # Sort by date and get last 10 years
-                df = df.sort_values('date')
-                ten_years_ago = datetime.now() - timedelta(days=365*10)
-                df = df[df['date'] > ten_years_ago]
-                
-                # Convert to millions of USD
-                df['value'] = df['value'] / 1_000_000
-                
-                st.success(f"Found {freq} frequency data")
-                return df
+        # Fetch data
+        etf = yf.Ticker(ticker)
+        df = etf.history(start=start_date, end=end_date)
         
-        # If we get here, try alternative indicators
-        for indicator in ['RASA_USD', 'RAFAB_USD']:
-            st.write(f"Trying alternative indicator: {indicator}")
-            params['dimensions']['INDICATOR'] = indicator
-            response = requests.get(url, params=params)
-            # ... (same processing as above)
+        # Reset index to make date a column
+        df = df.reset_index()
         
-        st.error(f"No data available for {country_info['code']}")
-        return None
+        # Calculate additional metrics
+        df['Daily_Return'] = df['Close'].pct_change()
+        df['YTD_Return'] = df['Close'].pct_change(periods=252)
+        
+        return df
         
     except Exception as e:
-        st.error(f"Error fetching data: {e}")
-        st.write("Full error:", str(e))
-        if 'response' in locals():
-            st.write("Response content:", response.text[:500])  # Show first 500 chars
+        st.error(f"Error fetching data for {ticker}: {e}")
         return None
 
 # Streamlit UI
-st.title("Foreign Reserves of Emerging Markets")
-st.write("Data source: DBnomics (IMF IFS)")
+st.title("MSCI Emerging Markets ETF Explorer")
+st.write("Data source: Yahoo Finance")
 
-# Search bar for countries
-search_term = st.text_input("Search for a country:")
+# ETF selection
+selected_etf_name = st.selectbox(
+    "Select an ETF:",
+    list(EM_ETFS.keys())
+)
 
-# Filter countries based on search
-filtered_countries = [
-    country for country in EMERGING_MARKETS.keys()
-    if search_term.lower() in country.lower()
-]
-
-if search_term and filtered_countries:
-    # Country selection from filtered list
-    selected_country = st.selectbox("Select country:", filtered_countries)
-    
-    # Get country info and fetch data
-    country_info = EMERGING_MARKETS[selected_country]
-    data = get_foreign_reserves(country_info)
+if selected_etf_name:
+    ticker = EM_ETFS[selected_etf_name]
+    data = get_etf_data(ticker)
     
     if data is not None:
-        # Create plot using plotly
+        # Display basic info
+        st.subheader(f"{selected_etf_name} ({ticker})")
+        
+        # Create price chart
         fig = px.line(
             data,
-            x='date',
-            y='value',
-            title=f'Foreign Reserves for {selected_country}',
-            labels={'value': 'Reserves (USD Millions)', 'date': 'Date'}
+            x='Date',
+            y='Close',
+            title=f'Price History for {selected_etf_name}',
+            labels={'Close': 'Price (USD)', 'Date': 'Date'}
         )
         
         # Customize layout
         fig.update_layout(
             hovermode='x unified',
-            yaxis_title="USD (Millions)",
             xaxis_title="Date",
-            xaxis_tickformat='%Y-%m'  # Format x-axis to show year-month
+            yaxis_title="Price (USD)"
         )
         
         # Add range slider
@@ -165,6 +85,21 @@ if search_term and filtered_countries:
         
         # Display plot
         st.plotly_chart(fig)
+        
+        # Display key metrics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            daily_return = data['Daily_Return'].iloc[-1] * 100
+            st.metric("Daily Return", f"{daily_return:.2f}%")
+            
+        with col2:
+            ytd_return = data['YTD_Return'].iloc[-1] * 100
+            st.metric("YTD Return", f"{ytd_return:.2f}%")
+            
+        with col3:
+            current_price = data['Close'].iloc[-1]
+            st.metric("Current Price", f"${current_price:.2f}")
         
         # Display raw data
         if st.checkbox("Show raw data"):
@@ -176,10 +111,7 @@ if search_term and filtered_countries:
             st.download_button(
                 label="Download CSV",
                 data=csv,
-                file_name=f'reserves_{selected_country}.csv',
+                file_name=f'{ticker}_data.csv',
                 mime='text/csv'
             )
-
-elif search_term:
-    st.write("No matching countries found.")
 
