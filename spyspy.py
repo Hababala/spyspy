@@ -9,11 +9,11 @@ IMF_API_ENDPOINT = "http://dataservices.imf.org/REST/SDMX_JSON.svc/"
 
 # Dictionary of emerging market countries with their ISO codes
 EMERGING_MARKETS = {
-    'Brazil': 'BR', 'China': 'CN', 'India': 'IN', 'Russia': 'RU', 
-    'South Africa': 'ZA', 'Mexico': 'MX', 'Indonesia': 'ID', 
-    'Turkey': 'TR', 'Thailand': 'TH', 'Malaysia': 'MY',
-    'Philippines': 'PH', 'Poland': 'PL', 'Vietnam': 'VN',
-    'Chile': 'CL', 'Colombia': 'CO', 'Peru': 'PE'
+    'Brazil': 'BRA', 'China': 'CHN', 'India': 'IND', 'Russia': 'RUS', 
+    'South Africa': 'ZAF', 'Mexico': 'MEX', 'Indonesia': 'IDN', 
+    'Turkey': 'TUR', 'Thailand': 'THA', 'Malaysia': 'MYS',
+    'Philippines': 'PHL', 'Poland': 'POL', 'Vietnam': 'VNM',
+    'Chile': 'CHL', 'Colombia': 'COL', 'Peru': 'PER'
 }
 
 def get_foreign_reserves(country_code):
@@ -25,53 +25,53 @@ def get_foreign_reserves(country_code):
         combinations = [
             ('IFS', 'RASA_USD'),    # IFS Total Reserves
             ('IFS', 'RAXG_USD'),    # IFS Reserves excluding gold
-            ('IFTSTSUB', 'TMGO'),   # International Financial Statistics
+            ('IFS', 'RAFAB_USD'),   # Foreign Assets
             ('BOP', 'BFRA_BP6_USD') # Balance of Payments reserves
         ]
         
         for database, indicator in combinations:
-            url = f"{IMF_API_ENDPOINT}CompactData/{database}/{country_code}.{indicator}"
+            # For Mexico, try both MX and MEX codes
+            country_codes = [country_code]
+            if country_code == 'MX':
+                country_codes.append('MEX')
             
-            # Debug info
-            st.write(f"Trying database: {database}, indicator: {indicator}")
-            st.write(f"URL: {url}")
-            
-            response = requests.get(url)
-            
-            if response.status_code != 200:
-                continue
+            for code in country_codes:
+                url = f"{IMF_API_ENDPOINT}CompactData/{database}/{code}.{indicator}"
                 
-            data = response.json()
-            
-            # Print raw response for debugging
-            if st.checkbox(f"Show raw response for {database}.{indicator}"):
-                st.json(data)
-            
-            dataset = data['CompactData']['DataSet']
-            
-            if 'Series' in dataset and dataset['Series']:
-                series = dataset['Series']
-                if isinstance(series, list):
-                    observations = series[0].get('Obs', [])
-                else:
-                    observations = series.get('Obs', [])
+                # Debug info
+                st.write(f"Trying database: {database}, indicator: {indicator}, country: {code}")
+                
+                response = requests.get(url)
+                if response.status_code != 200:
+                    continue
                     
-                if observations:
-                    df = pd.DataFrame(observations)
-                    df.columns = ['Date', 'Value']
-                    
-                    # Convert values to float and dates to datetime
-                    df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
-                    df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m')
-                    
-                    # Sort by date and get last 10 years
-                    df = df.sort_values('Date')
-                    ten_years_ago = datetime.now() - timedelta(days=365*10)
-                    df = df[df['Date'] > ten_years_ago]
-                    
-                    if not df.empty:
-                        st.success(f"Found data using {database}.{indicator}")
-                        return df
+                data = response.json()
+                dataset = data['CompactData']['DataSet']
+                
+                # Check if Series exists and has data
+                if 'Series' in dataset:
+                    series = dataset['Series']
+                    if isinstance(series, list):
+                        observations = series[0].get('Obs', [])
+                    else:
+                        observations = series.get('Obs', [])
+                        
+                    if observations:
+                        df = pd.DataFrame(observations)
+                        df.columns = ['Date', 'Value']
+                        
+                        # Convert values to float and dates to datetime
+                        df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
+                        df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m')
+                        
+                        # Sort by date and get last 10 years
+                        df = df.sort_values('Date')
+                        ten_years_ago = datetime.now() - timedelta(days=365*10)
+                        df = df[df['Date'] > ten_years_ago]
+                        
+                        if not df.empty:
+                            st.success(f"Found data using {database}.{indicator} for {code}")
+                            return df
         
         # If we get here, no data was found
         st.error(f"No reserves data available for {country_code}")
