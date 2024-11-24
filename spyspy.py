@@ -22,12 +22,20 @@ def get_foreign_reserves(country_code):
     Using IFS database and RAXG_USD series (Total Reserves excluding Gold, USD)
     """
     try:
-        url = f"{IMF_API_ENDPOINT}CompactData/IFS/{country_code}.RAXG_USD"
+        url = f"{IMF_API_ENDPOINT}CompactData/IFS/{country_code}.RASA_USD"
         response = requests.get(url)
         response.raise_for_status()
         
+        # Add debug information
+        st.write("API URL:", url)
+        st.write("Response Status:", response.status_code)
+        
         data = response.json()
         
+        # Show raw response for debugging
+        if st.checkbox("Show API Response"):
+            st.json(data)
+            
         # Add debug information
         if 'CompactData' not in data or 'DataSet' not in data['CompactData']:
             st.error(f"No data available for {country_code}")
@@ -71,6 +79,21 @@ def get_foreign_reserves(country_code):
     except Exception as e:
         st.error(f"Error processing data: {e}")
         return None
+
+def get_available_indicators(country_code):
+    """Check what indicators are available for a country"""
+    try:
+        # Query the IFS database for available series
+        url = f"{IMF_API_ENDPOINT}DataStructure/IFS"
+        response = requests.get(url)
+        response.raise_for_status()
+        
+        # Print raw response for debugging
+        st.write("Available indicators for", country_code)
+        st.json(response.json())
+        
+    except Exception as e:
+        st.error(f"Error checking indicators: {e}")
 
 # Streamlit UI
 st.title("Foreign Reserves of Emerging Markets")
@@ -116,6 +139,10 @@ if search_term and filtered_countries:
         # Display raw data
         if st.checkbox("Show raw data"):
             st.dataframe(data)
+
+        # Add this to your UI section for debugging
+        if st.button("Check Available Indicators"):
+            get_available_indicators(country_code)
 
 elif search_term:
     st.write("No matching countries found.")
