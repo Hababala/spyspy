@@ -124,11 +124,12 @@ else:
         # YTD Return filter
         st.sidebar.subheader("Filter ETFs")
         
-        # Safely get min and max values with fallbacks
+        # Get min and max values with explicit error handling
         try:
-            min_ytd = float(all_etf_data.select('ytd_return').min().item())
-            max_ytd = float(all_etf_data.select('ytd_return').max().item())
-        except (IndexError, ValueError):
+            ytd_values = [row['ytd_return'] for row in all_etf_data.iter_rows(named=True)]
+            min_ytd = float(min(ytd_values))
+            max_ytd = float(max(ytd_values))
+        except (ValueError, TypeError):
             st.warning("Could not calculate YTD return range. Using default values.")
             min_ytd = -30.0
             max_ytd = 30.0
