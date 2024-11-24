@@ -37,31 +37,39 @@ RESERVE_INDICATORS = [
 def get_foreign_reserves(country_info):
     """
     Fetch foreign reserves data from DBnomics
-    Using IMF IFS dataset with RAXG_USD series (Total Reserves minus Gold)
     """
     try:
         # Try different frequency codes (Monthly, Quarterly)
         frequencies = ['M', 'Q']
         
         for freq in frequencies:
-            # Construct the API URL
-            url = f"{DBNOM_API_ENDPOINT}/series/IMF/IFS/{freq}.{country_info['code']}.RAXG_USD.N"
+            # Construct the API URL with series query
+            url = f"{DBNOM_API_ENDPOINT}/series"
             
             # Parameters for the API request
             params = {
+                'provider_code': 'IMF',
+                'dataset_code': 'IFS',
+                'dimensions': {
+                    'REF_AREA': country_info['code'],
+                    'FREQ': freq,
+                    'INDICATOR': 'RAXG_USD'
+                },
                 'limit': 1000,
                 'format': 'json',
-                'observations': True  # Make sure we get the actual data
+                'observations': True
             }
             
             # Debug info
             st.write(f"Trying {freq} frequency data...")
-            st.write("Requesting URL:", url)
             
             # Make API request
             response = requests.get(url, params=params)
             
-            # Check if request was successful
+            # Debug response
+            st.write("Response status:", response.status_code)
+            st.write("Response URL:", response.url)
+            
             if response.status_code != 200:
                 st.write(f"Failed to fetch {freq} frequency data")
                 continue
@@ -96,7 +104,13 @@ def get_foreign_reserves(country_info):
                 st.success(f"Found {freq} frequency data")
                 return df
         
-        # If we get here, no data was found
+        # If we get here, try alternative indicators
+        for indicator in ['RASA_USD', 'RAFAB_USD']:
+            st.write(f"Trying alternative indicator: {indicator}")
+            params['dimensions']['INDICATOR'] = indicator
+            response = requests.get(url, params=params)
+            # ... (same processing as above)
+        
         st.error(f"No data available for {country_info['code']}")
         return None
         
