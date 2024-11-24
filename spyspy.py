@@ -1,6 +1,6 @@
 import streamlit as st
 import yfinance as yf
-import pandas as pd
+import polars as pl
 import plotly.express as px
 from datetime import datetime, timedelta
 
@@ -25,7 +25,7 @@ def get_all_etf_data():
     """
     Fetch data for all ETFs and calculate YTD returns
     """
-    etf_data = {}
+    etf_data = []
     for name, ticker in EM_ETFS.items():
         try:
             # Get data for last year
@@ -36,19 +36,25 @@ def get_all_etf_data():
             etf = yf.Ticker(ticker)
             df = etf.history(start=start_date, end=end_date)
             
-            # Calculate YTD return
-            ytd_return = ((df['Close'][-1] / df['Close'][0]) - 1) * 100
+            # Convert to Polars
+            df = pl.from_pandas(df)
             
-            etf_data[name] = {
+            # Calculate YTD return
+            first_close = df.select('Close').row(0)[0]
+            last_close = df.select('Close').row(-1)[0]
+            ytd_return = ((last_close / first_close) - 1) * 100
+            
+            etf_data.append({
+                'name': name,
                 'ticker': ticker,
                 'ytd_return': ytd_return,
-                'current_price': df['Close'][-1]
-            }
+                'current_price': last_close
+            })
             
         except Exception as e:
             st.error(f"Error fetching data for {ticker}: {e}")
     
-    return etf_data
+    return pl.DataFrame(etf_data)
 
 def get_etf_historical_data(ticker):
     """
@@ -60,9 +66,15 @@ def get_etf_historical_data(ticker):
         
         etf = yf.Ticker(ticker)
         df = etf.history(start=start_date, end=end_date)
-        df = df.reset_index()
-        df['Daily_Return'] = df['Close'].pct_change()
-        df['YTD_Return'] = df['Close'].pct_change(periods=252)
+        
+        # Convert to Polars and reset index
+        df = pl.from_pandas(df.reset_index())
+        
+        # Calculate additional metrics
+        df = df.with_columns([
+            pl.col('Close').pct_change().alias('Daily_Return'),
+            pl.col('Close').pct_change(252).alias('YTD_Return')
+        ])
         
         return df
         
@@ -77,13 +89,10 @@ st.write("Data source: Yahoo Finance")
 # Get data for all ETFs
 all_etf_data = get_all_etf_data()
 
-# Create a DataFrame for filtering
-etf_df = pd.DataFrame.from_dict(all_etf_data, orient='index')
-
 # YTD Return filter
 st.sidebar.subheader("Filter ETFs")
-min_ytd = float(etf_df['ytd_return'].min())
-max_ytd = float(etf_df['ytd_return'].max())
+min_ytd = float(all_etf_data.select('ytd_return').min()[0])
+max_ytd = float(all_etf_data.select('ytd_return').max()[0])
 ytd_range = st.sidebar.slider(
     "YTD Return Range (%)",
     min_value=min_ytd,
@@ -92,33 +101,41 @@ ytd_range = st.sidebar.slider(
 )
 
 # Filter ETFs based on YTD return
-filtered_etfs = etf_df[
-    (etf_df['ytd_return'] >= ytd_range[0]) & 
-    (etf_df['ytd_return'] <= ytd_range[1])
-].sort_values('ytd_return', ascending=False)
+filtered_etfs = (
+    all_etf_data
+    .filter(
+        (pl.col('ytd_return') >= ytd_range[0]) & 
+        (pl.col('ytd_return') <= ytd_range[1])
+    )
+    .sort('ytd_return', descending=True)
+)
 
 # Display filtered ETFs
 st.subheader("Filtered ETFs by YTD Return")
-for idx, row in filtered_etfs.iterrows():
-    st.write(f"{idx} ({row['ticker']}): {row['ytd_return']:.2f}%")
+for row in filtered_etfs.iter_rows(named=True):
+    st.write(f"{row['name']} ({row['ticker']}): {row['ytd_return']:.2f}%")
 
 # ETF selection from filtered list
 selected_etf_name = st.selectbox(
     "Select an ETF for detailed view:",
-    filtered_etfs.index.tolist()
+    filtered_etfs.select('name').to_series().to_list()
 )
 
 if selected_etf_name:
-    ticker = EM_ETFS[selected_etf_name]
+    selected_etf = filtered_etfs.filter(pl.col('name') == selected_etf_name).row(0, named=True)
+    ticker = selected_etf['ticker']
     data = get_etf_historical_data(ticker)
     
     if data is not None:
         # Display basic info
         st.subheader(f"{selected_etf_name} ({ticker})")
         
+        # Convert to pandas for plotly (plotly works better with pandas)
+        plot_data = data.to_pandas()
+        
         # Create price chart
         fig = px.line(
-            data,
+            plot_data,
             x='Date',
             y='Close',
             title=f'Price History for {selected_etf_name}',
@@ -139,24 +156,24 @@ if selected_etf_name:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            daily_return = data['Daily_Return'].iloc[-1] * 100
+            daily_return = float(data.select('Daily_Return').tail(1)[0]) * 100
             st.metric("Daily Return", f"{daily_return:.2f}%")
             
         with col2:
-            ytd_return = filtered_etfs.loc[selected_etf_name, 'ytd_return']
+            ytd_return = selected_etf['ytd_return']
             st.metric("YTD Return", f"{ytd_return:.2f}%")
             
         with col3:
-            current_price = data['Close'].iloc[-1]
+            current_price = selected_etf['current_price']
             st.metric("Current Price", f"${current_price:.2f}")
         
         # Display raw data
         if st.checkbox("Show raw data"):
-            st.dataframe(data)
+            st.dataframe(data.to_pandas())
             
         # Add download button
         if st.button("Download Data"):
-            csv = data.to_csv(index=False)
+            csv = data.write_csv()
             st.download_button(
                 label="Download CSV",
                 data=csv,
