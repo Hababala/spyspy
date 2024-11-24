@@ -27,10 +27,30 @@ def get_foreign_reserves(country_code):
         response.raise_for_status()
         
         data = response.json()
-        series = data['CompactData']['DataSet']['Series']
-        observations = series['Obs']
         
-        # Convert to DataFrame
+        # Add debug information
+        if 'CompactData' not in data or 'DataSet' not in data['CompactData']:
+            st.error(f"No data available for {country_code}")
+            return None
+            
+        # Check if Series exists and has data
+        dataset = data['CompactData']['DataSet']
+        if 'Series' not in dataset or not dataset['Series']:
+            st.error(f"No reserves data available for {country_code}")
+            return None
+            
+        # Handle both single and multiple series cases
+        series = dataset['Series']
+        if isinstance(series, list):
+            observations = series[0].get('Obs', [])
+        else:
+            observations = series.get('Obs', [])
+            
+        if not observations:
+            st.error(f"No observations found for {country_code}")
+            return None
+        
+        # Rest of the function remains the same
         df = pd.DataFrame(observations)
         df.columns = ['Date', 'Value']
         
@@ -45,8 +65,11 @@ def get_foreign_reserves(country_code):
         
         return df
     
+    except requests.exceptions.RequestException as e:
+        st.error(f"Network error: {e}")
+        return None
     except Exception as e:
-        st.error(f"Error fetching data: {e}")
+        st.error(f"Error processing data: {e}")
         return None
 
 # Streamlit UI
