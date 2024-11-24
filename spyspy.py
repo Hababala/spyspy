@@ -126,8 +126,8 @@ else:
         
         # Safely get min and max values with fallbacks
         try:
-            min_ytd = float(all_etf_data.select('ytd_return').min()[0])
-            max_ytd = float(all_etf_data.select('ytd_return').max()[0])
+            min_ytd = float(all_etf_data.select('ytd_return').min().item())
+            max_ytd = float(all_etf_data.select('ytd_return').max().item())
         except (IndexError, ValueError):
             st.warning("Could not calculate YTD return range. Using default values.")
             min_ytd = -30.0
