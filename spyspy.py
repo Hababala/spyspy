@@ -7,7 +7,7 @@ import plotly.express as px
 # DBnomics API endpoint
 DBNOM_API_ENDPOINT = "https://api.db.nomics.world/v22"
 
-# Dictionary of emerging market countries with their ISO codes and providers
+# Dictionary of emerging market countries with their ISO codes
 EMERGING_MARKETS = {
     'Brazil': {'code': 'BR', 'provider': 'IMF', 'dataset': 'IFS'},
     'China': {'code': 'CN', 'provider': 'IMF', 'dataset': 'IFS'},
@@ -33,18 +33,17 @@ def get_foreign_reserves(country_info):
     Using IMF IFS dataset with RAXG_USD series (Total Reserves minus Gold)
     """
     try:
-        # Construct the API URL
-        url = f"{DBNOM_API_ENDPOINT}/series/{country_info['provider']}/{country_info['dataset']}"
+        # Construct the API URL with correct parameter format
+        url = f"{DBNOM_API_ENDPOINT}/series/IMF/IFS/Q.{country_info['code']}.RAXG_USD.N"
         
         # Parameters for the API request
         params = {
-            'dimensions': {
-                'REF_AREA': country_info['code'],
-                'INDICATOR': 'RAXG_USD'  # Total Reserves excluding Gold
-            },
-            'format': 'json',
-            'limit': 1000  # Get more data points
+            'limit': 1000,
+            'format': 'json'
         }
+        
+        # Debug info
+        st.write("Requesting URL:", url)
         
         # Make API request
         response = requests.get(url, params=params)
@@ -83,6 +82,9 @@ def get_foreign_reserves(country_info):
     except Exception as e:
         st.error(f"Error fetching data: {e}")
         st.write("Full error:", str(e))
+        # Print response content for debugging
+        if 'response' in locals():
+            st.write("Response content:", response.text)
         return None
 
 # Streamlit UI
