@@ -93,7 +93,7 @@ def get_foreign_reserves(country_info):
                 # Convert to millions of USD
                 df['value'] = df['value'] / 1_000_000
                 
-                st.success(f"Found {freq}frequency data")
+                st.success(f"Found {freq} frequency data")
                 return df
         
         # If we get here, no data was found
