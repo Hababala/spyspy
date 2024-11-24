@@ -46,9 +46,13 @@ def get_all_etf_data():
             df = pl.from_pandas(df)
             
             # Calculate YTD return
-            first_close = df.select('Close').row(0)[0]
-            last_close = df.select('Close').row(-1)[0]
-            ytd_return = ((last_close / first_close) - 1) * 100
+            try:
+                first_close = df.select('Close').row(0)[0]
+                last_close = df.select('Close').row(-1)[0]
+                ytd_return = ((last_close / first_close) - 1) * 100
+            except Exception as e:
+                errors.append(f"Error calculating YTD return for {ticker}: {e}")
+                continue
             
             etf_data.append({
                 'name': name,
@@ -67,7 +71,15 @@ def get_all_etf_data():
     
     if not etf_data:
         st.error("No ETF data could be loaded. Please try again later.")
-        return pl.DataFrame()
+        # Return empty DataFrame with correct schema
+        return pl.DataFrame(
+            schema={
+                'name': pl.Utf8,
+                'ticker': pl.Utf8,
+                'ytd_return': pl.Float64,
+                'current_price': pl.Float64
+            }
+        )
     
     return pl.DataFrame(etf_data)
 
