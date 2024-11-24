@@ -18,27 +18,35 @@ EMERGING_MARKETS = {
 
 def get_foreign_reserves(country_code):
     """
-    Fetch foreign reserves data from IMF
+    Fetch foreign reserves data from IMF with expanded options
     """
     try:
-        # Try different indicators in order until we find data
-        indicators = [
-            'RASA_USD',  # Total Reserves
-            'RAXG_USD',  # Reserves excluding gold
-            'RAFAB_USD', # Foreign Assets (Monetary Authorities)
-            'FIRA_USD',  # International Reserves
-            'RAFW_USD'   # Foreign Exchange
+        # Try different databases and indicators
+        combinations = [
+            ('IFS', 'RASA_USD'),    # IFS Total Reserves
+            ('IFS', 'RAXG_USD'),    # IFS Reserves excluding gold
+            ('IFTSTSUB', 'TMGO'),   # International Financial Statistics
+            ('BOP', 'BFRA_BP6_USD') # Balance of Payments reserves
         ]
         
-        for indicator in indicators:
-            url = f"{IMF_API_ENDPOINT}CompactData/IFS/{country_code}.{indicator}"
+        for database, indicator in combinations:
+            url = f"{IMF_API_ENDPOINT}CompactData/{database}/{country_code}.{indicator}"
+            
+            # Debug info
+            st.write(f"Trying database: {database}, indicator: {indicator}")
+            st.write(f"URL: {url}")
+            
             response = requests.get(url)
-            response.raise_for_status()
             
-            # Add debug information
-            st.write(f"Trying indicator: {indicator}")
-            
+            if response.status_code != 200:
+                continue
+                
             data = response.json()
+            
+            # Print raw response for debugging
+            if st.checkbox(f"Show raw response for {database}.{indicator}"):
+                st.json(data)
+            
             dataset = data['CompactData']['DataSet']
             
             if 'Series' in dataset and dataset['Series']:
@@ -49,7 +57,6 @@ def get_foreign_reserves(country_code):
                     observations = series.get('Obs', [])
                     
                 if observations:
-                    # We found data, process it
                     df = pd.DataFrame(observations)
                     df.columns = ['Date', 'Value']
                     
@@ -62,31 +69,29 @@ def get_foreign_reserves(country_code):
                     ten_years_ago = datetime.now() - timedelta(days=365*10)
                     df = df[df['Date'] > ten_years_ago]
                     
-                    st.success(f"Found data using indicator: {indicator}")
-                    return df
+                    if not df.empty:
+                        st.success(f"Found data using {database}.{indicator}")
+                        return df
         
-        st.error(f"No reserves data available for {country_code} across any indicators")
+        # If we get here, no data was found
+        st.error(f"No reserves data available for {country_code}")
         return None
             
-    except requests.exceptions.RequestException as e:
-        st.error(f"Network error: {e}")
-        return None
     except Exception as e:
         st.error(f"Error processing data: {e}")
+        st.write("Full error:", str(e))
         return None
 
 def get_available_indicators(country_code):
     """Check what indicators are available for a country"""
     try:
-        # Query the IFS database for available series
-        url = f"{IMF_API_ENDPOINT}DataStructure/IFS"
-        response = requests.get(url)
-        response.raise_for_status()
-        
-        # Print raw response for debugging
-        st.write("Available indicators for", country_code)
-        st.json(response.json())
-        
+        databases = ['IFS', 'BOP', 'IFTSTSUB']
+        for db in databases:
+            url = f"{IMF_API_ENDPOINT}DataStructure/{db}"
+            response = requests.get(url)
+            if response.status_code == 200:
+                st.write(f"Available indicators in {db} for {country_code}:")
+                st.json(response.json())
     except Exception as e:
         st.error(f"Error checking indicators: {e}")
 
