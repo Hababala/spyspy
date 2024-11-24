@@ -19,60 +19,55 @@ EMERGING_MARKETS = {
 def get_foreign_reserves(country_code):
     """
     Fetch foreign reserves data from IMF
-    Using IFS database and RAXG_USD series (Total Reserves excluding Gold, USD)
     """
     try:
-        url = f"{IMF_API_ENDPOINT}CompactData/IFS/{country_code}.RASA_USD"
-        response = requests.get(url)
-        response.raise_for_status()
+        # Try different indicators in order until we find data
+        indicators = [
+            'RASA_USD',  # Total Reserves
+            'RAXG_USD',  # Reserves excluding gold
+            'RAFAB_USD', # Foreign Assets (Monetary Authorities)
+            'FIRA_USD',  # International Reserves
+            'RAFW_USD'   # Foreign Exchange
+        ]
         
-        # Add debug information
-        st.write("API URL:", url)
-        st.write("Response Status:", response.status_code)
-        
-        data = response.json()
-        
-        # Show raw response for debugging
-        if st.checkbox("Show API Response"):
-            st.json(data)
+        for indicator in indicators:
+            url = f"{IMF_API_ENDPOINT}CompactData/IFS/{country_code}.{indicator}"
+            response = requests.get(url)
+            response.raise_for_status()
             
-        # Add debug information
-        if 'CompactData' not in data or 'DataSet' not in data['CompactData']:
-            st.error(f"No data available for {country_code}")
-            return None
+            # Add debug information
+            st.write(f"Trying indicator: {indicator}")
             
-        # Check if Series exists and has data
-        dataset = data['CompactData']['DataSet']
-        if 'Series' not in dataset or not dataset['Series']:
-            st.error(f"No reserves data available for {country_code}")
-            return None
+            data = response.json()
+            dataset = data['CompactData']['DataSet']
             
-        # Handle both single and multiple series cases
-        series = dataset['Series']
-        if isinstance(series, list):
-            observations = series[0].get('Obs', [])
-        else:
-            observations = series.get('Obs', [])
+            if 'Series' in dataset and dataset['Series']:
+                series = dataset['Series']
+                if isinstance(series, list):
+                    observations = series[0].get('Obs', [])
+                else:
+                    observations = series.get('Obs', [])
+                    
+                if observations:
+                    # We found data, process it
+                    df = pd.DataFrame(observations)
+                    df.columns = ['Date', 'Value']
+                    
+                    # Convert values to float and dates to datetime
+                    df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
+                    df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m')
+                    
+                    # Sort by date and get last 10 years
+                    df = df.sort_values('Date')
+                    ten_years_ago = datetime.now() - timedelta(days=365*10)
+                    df = df[df['Date'] > ten_years_ago]
+                    
+                    st.success(f"Found data using indicator: {indicator}")
+                    return df
+        
+        st.error(f"No reserves data available for {country_code} across any indicators")
+        return None
             
-        if not observations:
-            st.error(f"No observations found for {country_code}")
-            return None
-        
-        # Rest of the function remains the same
-        df = pd.DataFrame(observations)
-        df.columns = ['Date', 'Value']
-        
-        # Convert values to float and dates to datetime
-        df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
-        df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m')
-        
-        # Sort by date and get last 10 years
-        df = df.sort_values('Date')
-        ten_years_ago = datetime.now() - timedelta(days=365*10)
-        df = df[df['Date'] > ten_years_ago]
-        
-        return df
-    
     except requests.exceptions.RequestException as e:
         st.error(f"Network error: {e}")
         return None
@@ -140,9 +135,11 @@ if search_term and filtered_countries:
         if st.checkbox("Show raw data"):
             st.dataframe(data)
 
-        # Add this to your UI section for debugging
-        if st.button("Check Available Indicators"):
-            get_available_indicators(country_code)
+        # Add this to your UI section
+        if st.checkbox("Debug Mode"):
+            st.write("Country Code:", country_code)
+            if st.button("Check Available Indicators"):
+                get_available_indicators(country_code)
 
 elif search_term:
     st.write("No matching countries found.")
