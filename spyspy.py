@@ -4,111 +4,90 @@ import requests
 from datetime import datetime, timedelta
 import plotly.express as px
 
-# World Bank API endpoint
-WB_API_ENDPOINT = "https://api.worldbank.org/v2"
+# DBnomics API endpoint
+DBNOM_API_ENDPOINT = "https://api.db.nomics.world/v22"
 
-# Dictionary of emerging market countries with their ISO codes
+# Dictionary of emerging market countries with their ISO codes and providers
 EMERGING_MARKETS = {
-    'Brazil': 'BRA', 'China': 'CHN', 'India': 'IND', 'Russia': 'RUS', 
-    'South Africa': 'ZAF', 'Mexico': 'MEX', 'Indonesia': 'IDN', 
-    'Turkey': 'TUR', 'Thailand': 'THA', 'Malaysia': 'MYS',
-    'Philippines': 'PHL', 'Poland': 'POL', 'Vietnam': 'VNM',
-    'Chile': 'CHL', 'Colombia': 'COL', 'Peru': 'PER'
+    'Brazil': {'code': 'BR', 'provider': 'IMF', 'dataset': 'IFS'},
+    'China': {'code': 'CN', 'provider': 'IMF', 'dataset': 'IFS'},
+    'India': {'code': 'IN', 'provider': 'IMF', 'dataset': 'IFS'},
+    'Russia': {'code': 'RU', 'provider': 'IMF', 'dataset': 'IFS'},
+    'South Africa': {'code': 'ZA', 'provider': 'IMF', 'dataset': 'IFS'},
+    'Mexico': {'code': 'MX', 'provider': 'IMF', 'dataset': 'IFS'},
+    'Indonesia': {'code': 'ID', 'provider': 'IMF', 'dataset': 'IFS'},
+    'Turkey': {'code': 'TR', 'provider': 'IMF', 'dataset': 'IFS'},
+    'Thailand': {'code': 'TH', 'provider': 'IMF', 'dataset': 'IFS'},
+    'Malaysia': {'code': 'MY', 'provider': 'IMF', 'dataset': 'IFS'},
+    'Philippines': {'code': 'PH', 'provider': 'IMF', 'dataset': 'IFS'},
+    'Poland': {'code': 'PL', 'provider': 'IMF', 'dataset': 'IFS'},
+    'Vietnam': {'code': 'VN', 'provider': 'IMF', 'dataset': 'IFS'},
+    'Chile': {'code': 'CL', 'provider': 'IMF', 'dataset': 'IFS'},
+    'Colombia': {'code': 'CO', 'provider': 'IMF', 'dataset': 'IFS'},
+    'Peru': {'code': 'PE', 'provider': 'IMF', 'dataset': 'IFS'}
 }
 
-def get_foreign_reserves(country_code):
+def get_foreign_reserves(country_info):
     """
-    Fetch foreign reserves data from World Bank
-    Indicator: FM.AST.CGLD.M (Total Reserves minus Gold, Monthly)
+    Fetch foreign reserves data from DBnomics
+    Using IMF IFS dataset with RAXG_USD series (Total Reserves minus Gold)
     """
     try:
-        # Calculate last 10 years
-        end_year = datetime.now().year
-        start_year = end_year - 10
+        # Construct the API URL
+        url = f"{DBNOM_API_ENDPOINT}/series/{country_info['provider']}/{country_info['dataset']}"
         
-        # World Bank API parameters
+        # Parameters for the API request
         params = {
+            'dimensions': {
+                'REF_AREA': country_info['code'],
+                'INDICATOR': 'RAXG_USD'  # Total Reserves excluding Gold
+            },
             'format': 'json',
-            'per_page': 500,  # Increased to accommodate monthly data
-            'date': f'{start_year}M01:{end_year}M12'  # Monthly format
+            'limit': 1000  # Get more data points
         }
         
         # Make API request
-        url = f"{WB_API_ENDPOINT}/country/{country_code}/indicator/FM.AST.CGLD.M"
         response = requests.get(url, params=params)
         response.raise_for_status()
         
-        # World Bank API returns a list where [0] is metadata and [1] is data
-        data = response.json()[1]
+        data = response.json()
         
-        if not data:
-            st.error(f"No monthly data available for {country_code}")
-            # Try annual data as fallback
-            return get_annual_reserves(country_code)
-            
-        # Convert to DataFrame
-        df = pd.DataFrame(data)
-        
-        # Clean up the data
-        df = df[['date', 'value']].copy()
-        df['value'] = pd.to_numeric(df['value'], errors='coerce')
-        df['date'] = pd.to_datetime(df['date'], format='%YM%m')
-        
-        # Sort by date
-        df = df.sort_values('date')
-        
-        # Convert from dollars to millions of dollars
-        df['value'] = df['value'] / 1_000_000
-        
-        return df
-        
-    except Exception as e:
-        st.error(f"Error fetching monthly data: {e}")
-        # Try annual data as fallback
-        return get_annual_reserves(country_code)
-
-def get_annual_reserves(country_code):
-    """
-    Fallback function to get annual data
-    Indicator: FI.RES.TOTL.CD (Total reserves including gold, Annual)
-    """
-    try:
-        end_year = datetime.now().year
-        start_year = end_year - 10
-        
-        params = {
-            'format': 'json',
-            'per_page': 100,
-            'date': f'{start_year}:{end_year}'
-        }
-        
-        url = f"{WB_API_ENDPOINT}/country/{country_code}/indicator/FI.RES.TOTL.CD"
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        
-        data = response.json()[1]
-        
-        if not data:
-            st.error(f"No data available for {country_code}")
+        if 'series' not in data or not data['series']:
+            st.error(f"No monthly data available for {country_info['code']}")
             return None
             
-        df = pd.DataFrame(data)
-        df = df[['date', 'value']].copy()
+        # Extract the time series data
+        series = data['series'][0]['period']
+        values = data['series'][0]['value']
+        
+        # Create DataFrame
+        df = pd.DataFrame({
+            'date': series,
+            'value': values
+        })
+        
+        # Convert to datetime and numeric
+        df['date'] = pd.to_datetime(df['date'])
         df['value'] = pd.to_numeric(df['value'], errors='coerce')
-        df['date'] = pd.to_datetime(df['date'], format='%Y')
+        
+        # Sort by date and get last 10 years
         df = df.sort_values('date')
+        ten_years_ago = datetime.now() - timedelta(days=365*10)
+        df = df[df['date'] > ten_years_ago]
+        
+        # Convert to millions of USD
         df['value'] = df['value'] / 1_000_000
         
-        st.info("Only annual data available for this country")
         return df
         
     except Exception as e:
-        st.error(f"Error fetching annual data: {e}")
+        st.error(f"Error fetching data: {e}")
+        st.write("Full error:", str(e))
         return None
 
 # Streamlit UI
 st.title("Foreign Reserves of Emerging Markets")
-st.write("Data source: World Bank")
+st.write("Data source: DBnomics (IMF IFS)")
 
 # Search bar for countries
 search_term = st.text_input("Search for a country:")
@@ -123,20 +102,9 @@ if search_term and filtered_countries:
     # Country selection from filtered list
     selected_country = st.selectbox("Select country:", filtered_countries)
     
-    # Get country code and fetch data
-    country_code = EMERGING_MARKETS[selected_country]
-    
-    # Add this to the UI section
-    frequency = st.selectbox(
-        "Select data frequency:",
-        ["Monthly", "Annual"]
-    )
-    
-    # Modify the data fetch based on frequency
-    if frequency == "Monthly":
-        data = get_foreign_reserves(country_code)
-    else:
-        data = get_annual_reserves(country_code)
+    # Get country info and fetch data
+    country_info = EMERGING_MARKETS[selected_country]
+    data = get_foreign_reserves(country_info)
     
     if data is not None:
         # Create plot using plotly
@@ -148,7 +116,7 @@ if search_term and filtered_countries:
             labels={'value': 'Reserves (USD Millions)', 'date': 'Date'}
         )
         
-        # Customize layout for monthly data
+        # Customize layout
         fig.update_layout(
             hovermode='x unified',
             yaxis_title="USD (Millions)",
