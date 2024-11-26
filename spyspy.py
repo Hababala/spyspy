@@ -1,21 +1,22 @@
 import streamlit as st
 import plotly.graph_objects as go
 import yfinance as yf
+import numpy as np
+from scipy import stats
 import pandas as pd
 from openbb import obb
+
 
 # Initialize OpenBB
 obb.account.login(pat="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiQWpIZ2hsazVtcXk0VEV5V1FEUFRlakpqS3NYQjcxOXd5NzhyRjI2MiIsImV4cCI6MTc2Mjg4OTc4N30.4cKXMKxmZxc9CgWPIyAjF7T8nCyH0gThySmeACR-I1o")
 
-st.title("US Stock Market Search")
+# Get companies from OpenBB
+all_companies = obb.equity.search("", provider="sec")
 
-# Get all companies from OpenBB (cached)
-@st.cache_data
-def get_companies():
-    return obb.equity.search("", provider="sec").to_df()
+# Convert OpenBB object to DataFrame
+all_companies = obb.equity.search("", provider="sec").to_df()
 
-# Load companies
-all_companies = get_companies()
+# Get symbols list
 symbols_list = all_companies['symbol'].tolist()
 
 # Add search box
