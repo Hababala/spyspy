@@ -11,26 +11,25 @@ def fetch_russell1000():
         # Get IWB info
         iwb = yf.Ticker("IWB")
         
-        # Get holdings from download method
-        holdings = iwb.get_holdings()
+        # Get holdings from info method
+        info = iwb.info
+        
+        # Print available keys for debugging
+        st.write("Available info keys:", info.keys())
+        
+        # Get top holdings
+        holdings = info.get('holdings', [])
         
         # Convert to DataFrame and clean up
         df = pd.DataFrame(holdings)
         
-        # Sort by weight descending
-        df = df.sort_values('% of ETF', ascending=False)
-        
-        # Rename columns for clarity
-        df = df.rename(columns={
-            'Symbol': 'ticker',
-            'Name': 'company',
-            '% of ETF': 'weight'
-        })
+        # Print raw dataframe for debugging
+        st.write("Raw holdings data:", df)
         
         return df
     except Exception as e:
         st.error(f"Error fetching Russell 1000 constituents: {str(e)}")
-        st.write("Error details:", str(e))  # Add this line for debugging
+        st.write("Error details:", str(e))
         return pd.DataFrame()
 
 # Load Russell 1000 companies
