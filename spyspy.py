@@ -37,51 +37,53 @@ def get_company_description(ticker):
         soup = BeautifulSoup(response.text, 'html.parser')
         st.write("Parsing search results...")
 
-        # Find the link to the most recent 10-K filing
-        filing_links = soup.find_all('a', {'id': 'interactiveDataBtn'})
-        if not filing_links:
+        # Find all document links
+        doc_links = []
+        for link in soup.find_all('a'):
+            if '10-K' in link.text and 'html' in link.get('href', ''):
+                doc_links.append(urllib.parse.urljoin(base_url, link['href']))
+        
+        if not doc_links:
             st.warning(f"No 10-K filings found for {ticker}")
             return None
 
-        # Get the first (most recent) 10-K filing URL
-        filing_url = urllib.parse.urljoin(base_url, filing_links[0]['href'])
-        st.write(f"Found 10-K filing URL: {filing_url}")
-        
-        # Add a delay to respect rate limits
-        time.sleep(0.1)
-
-        # Fetch the 10-K filing
-        filing_response = requests.get(filing_url, headers=headers)
-        st.write(f"Filing response status: {filing_response.status_code}")
-        
-        if filing_response.status_code != 200:
-            st.warning(f"Failed to fetch 10-K")
-            return None
+        # Try each document link
+        for doc_url in doc_links[:3]:  # Try the 3 most recent filings
+            st.write(f"Trying document: {doc_url}")
             
-        filing_soup = BeautifulSoup(filing_response.text, 'html.parser')
-        st.write("Parsing 10-K content...")
+            # Add a delay to respect rate limits
+            time.sleep(0.1)
 
-        # Try different methods to find the business description
-        description = None
-        
-        # Method 1: Look for "Business" section
-        business_section = filing_soup.find('span', string='Business')
-        if business_section:
-            description = business_section.find_next('p')
-            st.write("Found description using Method 1")
+            # Fetch the document
+            doc_response = requests.get(doc_url, headers=headers)
+            if doc_response.status_code != 200:
+                continue
+                
+            doc_soup = BeautifulSoup(doc_response.text, 'html.parser')
             
-        # Method 2: Look for "Item 1. Business" section
-        if not description:
-            business_section = filing_soup.find('span', string='Item 1. Business')
-            if business_section:
-                description = business_section.find_next('p')
-                st.write("Found description using Method 2")
+            # Try multiple methods to find the business description
+            description = None
+            
+            # Method 1: Look for "Business" section
+            for tag in doc_soup.find_all(['span', 'div', 'p', 'h1', 'h2', 'h3']):
+                if tag.text.strip() == 'Business' or tag.text.strip() == 'Item 1. Business':
+                    # Get the next few paragraphs
+                    paragraphs = []
+                    next_tag = tag.find_next(['p', 'div'])
+                    while next_tag and len(paragraphs) < 5:
+                        if len(next_tag.text.strip()) > 100:  # Only include substantial paragraphs
+                            paragraphs.append(next_tag.text.strip())
+                        next_tag = next_tag.find_next(['p', 'div'])
+                    
+                    if paragraphs:
+                        description = ' '.join(paragraphs)
+                        break
+            
+            if description:
+                return description
 
-        if description:
-            return description.text.strip()
-        else:
-            st.warning(f"Could not find business description")
-            return None
+        st.warning(f"Could not find business description in recent filings")
+        return None
 
     except Exception as e:
         st.error(f"Error fetching description: {str(e)}")
@@ -94,5 +96,23 @@ description = get_company_description('EXAS')
 if description:
     st.subheader("Company Description")
     st.write(description)
+    
+    # Add word count and summary stats
+    word_count = len(description.split())
+    st.info(f"Description length: {word_count} words")
+    
+    # Add download button
+    st.download_button(
+        label="Download Description",
+        data=description,
+        file_name="EXAS_description.txt",
+        mime="text/plain"
+    )
 else:
     st.error("Could not fetch EXAS description")
+    
+    # Add alternative data sources
+    st.write("Try these alternative sources:")
+    st.write("1. [Yahoo Finance](https://finance.yahoo.com/quote/EXAS/profile)")
+    st.write("2. [Company Website](https://www.exactsciences.com/)")
+    st.write("3. [SEC EDGAR](https://www.sec.gov/edgar/searchedgar/companysearch)")
