@@ -4,20 +4,39 @@ import yfinance as yf
 import numpy as np
 from scipy import stats
 import pandas as pd
-from openbb import obb
+import requests
 
+st.title("Stock Market Analysis")
 
-# Initialize OpenBB
-obb.account.login(pat="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiQWpIZ2hsazVtcXk0VEV5V1FEUFRlakpqS3NYQjcxOXd5NzhyRjI2MiIsImV4cCI6MTc2Mjg4OTc4N30.4cKXMKxmZxc9CgWPIyAjF7T8nCyH0gThySmeACR-I1o")
+# Initialize session state for API key
+if 'sec_api_key' not in st.session_state:
+    st.session_state.sec_api_key = "ebded077ff8114c8e3a431c1dcfa8a8a3bab629171ac5a00d68024d113d50c56"
 
-# Get companies from OpenBB
-all_companies = obb.equity.search("", provider="sec")
+@st.cache_data
+def get_sec_companies():
+    """Get all companies from SEC API"""
+    headers = {
+        'User-Agent': 'Mozilla/5.0',
+        'Accept-Encoding': 'gzip, deflate',
+        'Host': 'www.sec.gov'
+    }
+    
+    try:
+        url = "https://www.sec.gov/files/company_tickers.json"
+        response = requests.get(url, headers=headers)
+        companies_dict = response.json()
+        
+        # Convert to DataFrame
+        df = pd.DataFrame.from_dict(companies_dict, orient='index')
+        df.columns = ['ticker', 'name', 'cik']
+        return df
+    except Exception as e:
+        st.error(f"Error fetching companies: {str(e)}")
+        return pd.DataFrame()
 
-# Convert OpenBB object to DataFrame
-all_companies = obb.equity.search("", provider="sec").to_df()
-
-# Get symbols list
-symbols_list = all_companies['symbol'].tolist()
+# Get companies list
+companies_df = get_sec_companies()
+symbols_list = companies_df['ticker'].tolist()
 
 # Add search box
 search_query = st.text_input("Search for a symbol:", "")
