@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import yfinance as yf
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 st.title("US Listed Companies")
 
@@ -31,54 +32,77 @@ def fetch_us_companies():
         return pd.DataFrame()
 
 @st.cache_data
-def fetch_company_details(ticker):
-    """Fetch additional company details using yfinance"""
+def fetch_company_details_batch(ticker):
+    """Fetch company details with caching"""
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
         return {
-            'description': info.get('longBusinessSummary', '').lower(),  # Convert to lowercase for case-insensitive search
+            'ticker': ticker,
+            'description': info.get('longBusinessSummary', '').lower(),
             'sector': info.get('sector', 'N/A'),
             'market_cap': info.get('marketCap', 'N/A')
         }
     except Exception as e:
         return {
+            'ticker': ticker,
             'description': '',
             'sector': 'N/A',
             'market_cap': 'N/A'
         }
 
+def fetch_details_parallel(tickers, max_workers=10):
+    """Fetch company details in parallel"""
+    results = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_ticker = {executor.submit(fetch_company_details_batch, ticker): ticker 
+                          for ticker in tickers}
+        for future in as_completed(future_to_ticker):
+            try:
+                data = future.result()
+                results.append(data)
+            except Exception as e:
+                st.error(f"Error fetching details: {str(e)}")
+    return results
+
 # Fetch companies
 companies_df = fetch_us_companies()
 
 if not companies_df.empty:
-    # Add search bar for keywords
     search_query = st.text_input("Enter keywords to search in company descriptions:", "").lower()
     
     if search_query:
         st.info("Fetching and filtering companies... This may take a moment.")
         
-        # Fetch details for all companies and filter based on description
-        filtered_companies = []
+        # Get all tickers
+        tickers = companies_df['ticker'].tolist()
+        
+        # Fetch details in parallel
         with st.spinner('Loading company details...'):
-            for _, row in companies_df.iterrows():
-                details = fetch_company_details(row['ticker'])
-                if search_query in details['description']:
-                    # Format market cap
-                    market_cap = details['market_cap']
-                    if isinstance(market_cap, (int, float)) and market_cap != 'N/A':
-                        market_cap = f"${market_cap/1e9:.2f}B"
-                    
-                    # Truncate description
-                    description = details['description'][:200] + '...' if len(details['description']) > 200 else details['description']
-                    
-                    filtered_companies.append({
-                        'Ticker': row['ticker'],
-                        'Name': row['title'],
-                        'Description': description,
-                        'Sector': details['sector'],
-                        'Market Cap': market_cap
-                    })
+            all_details = fetch_details_parallel(tickers)
+        
+        # Filter companies based on description
+        filtered_companies = []
+        for details in all_details:
+            if search_query in details['description']:
+                ticker = details['ticker']
+                company = companies_df[companies_df['ticker'] == ticker].iloc[0]
+                
+                # Format market cap
+                market_cap = details['market_cap']
+                if isinstance(market_cap, (int, float)) and market_cap != 'N/A':
+                    market_cap = f"${market_cap/1e9:.2f}B"
+                
+                # Truncate description
+                description = details['description'][:200] + '...' if len(details['description']) > 200 else details['description']
+                
+                filtered_companies.append({
+                    'Ticker': ticker,
+                    'Name': company['title'],
+                    'Description': description,
+                    'Sector': details['sector'],
+                    'Market Cap': market_cap
+                })
         
         if filtered_companies:
             detailed_df = pd.DataFrame(filtered_companies)
