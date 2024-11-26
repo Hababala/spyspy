@@ -40,7 +40,8 @@ def fetch_us_companies():
             companies_dict = response.json()
             df = pd.DataFrame.from_dict(companies_dict, orient='index')
             df.columns = ['cik_str', 'ticker', 'title']
-            return df
+            # Limit to first 500 companies for testing
+            return df.head(500)  # Adjust this number as needed
         else:
             st.error(f"Error: Status code {response.status_code}")
             return pd.DataFrame()
@@ -69,8 +70,12 @@ def fetch_company_details_batch(ticker):
         }
 
 def fetch_details_parallel(tickers, max_workers=10):
-    """Fetch company details in parallel"""
+    """Fetch company details in parallel with progress bar"""
     results = []
+    total = len(tickers)
+    progress_bar = st.progress(0)
+    completed = 0
+    
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_ticker = {executor.submit(fetch_company_details_batch, ticker): ticker 
                           for ticker in tickers}
@@ -78,8 +83,12 @@ def fetch_details_parallel(tickers, max_workers=10):
             try:
                 data = future.result()
                 results.append(data)
+                completed += 1
+                progress_bar.progress(completed / total)
             except Exception as e:
                 st.error(f"Error fetching details: {str(e)}")
+    
+    progress_bar.empty()
     return results
 
 @st.cache_data
