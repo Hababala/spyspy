@@ -2,42 +2,68 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 
-st.title("Russell 1000 Companies")
+st.title("Top 1000 US Companies by Market Cap")
 
 @st.cache_data
-def fetch_russell1000():
-    """Fetch Russell 1000 constituents from iShares Russell 1000 ETF (IWB)"""
+def fetch_top_1000():
+    """Fetch top 1000 US companies by market cap"""
     try:
-        # Get IWB info
-        iwb = yf.Ticker("IWB")
+        # Use S&P 500 as a starting point to get major tickers
+        sp500 = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')[0]
+        nasdaq = pd.read_html('https://en.wikipedia.org/wiki/Nasdaq-100')[4]
         
-        # Get holdings from info method
-        info = iwb.info
+        # Combine and get unique tickers
+        tickers = pd.concat([
+            sp500['Symbol'],
+            nasdaq['Ticker']
+        ]).unique()
         
-        # Print available keys for debugging
-        st.write("Available info keys:", info.keys())
+        # Fetch market cap and other info for each company
+        companies = []
+        for ticker in tickers:
+            try:
+                stock = yf.Ticker(ticker)
+                info = stock.info
+                
+                companies.append({
+                    'ticker': ticker,
+                    'name': info.get('longName', 'N/A'),
+                    'market_cap': info.get('marketCap', 0),
+                    'sector': info.get('sector', 'N/A'),
+                    'industry': info.get('industry', 'N/A')
+                })
+            except:
+                continue
         
-        # Get top holdings
-        holdings = info.get('holdings', [])
+        # Convert to DataFrame and sort by market cap
+        df = pd.DataFrame(companies)
+        df = df.sort_values('market_cap', ascending=False).head(1000)
         
-        # Convert to DataFrame and clean up
-        df = pd.DataFrame(holdings)
-        
-        # Print raw dataframe for debugging
-        st.write("Raw holdings data:", df)
+        # Format market cap
+        df['market_cap'] = df['market_cap'].apply(lambda x: f"${x/1e9:.2f}B" if x > 0 else 'N/A')
         
         return df
+    
     except Exception as e:
-        st.error(f"Error fetching Russell 1000 constituents: {str(e)}")
-        st.write("Error details:", str(e))
+        st.error(f"Error fetching companies: {str(e)}")
         return pd.DataFrame()
 
-# Load Russell 1000 companies
-companies_df = fetch_russell1000()
+# Load companies
+companies_df = fetch_top_1000()
 
 if not companies_df.empty:
-    st.write(f"Loaded {len(companies_df)} companies from Russell 1000")
-    st.dataframe(companies_df)
-else:
-    st.write("Error loading Russell 1000 companies.")
+    # Add search functionality
+    search_query = st.text_input("Search companies by name or ticker:", "").lower()
     
+    if search_query:
+        filtered_df = companies_df[
+            companies_df['name'].str.lower().str.contains(search_query, na=False) |
+            companies_df['ticker'].str.lower().str.contains(search_query, na=False)
+        ]
+        st.write(f"Found {len(filtered_df)} matching companies:")
+        st.dataframe(filtered_df)
+    else:
+        st.write(f"Showing all {len(companies_df)} companies:")
+        st.dataframe(companies_df)
+else:
+    st.write("Error loading companies.")
