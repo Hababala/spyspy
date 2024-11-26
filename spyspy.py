@@ -2,10 +2,27 @@ import streamlit as st
 import pandas as pd
 import requests
 import yfinance as yf
-import time
+import json
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta
 
 st.title("US Listed Companies")
+
+# File paths
+DATA_DIR = "data"
+COMPANIES_FILE = os.path.join(DATA_DIR, "company_details.json")
+LAST_UPDATE_FILE = os.path.join(DATA_DIR, "last_update.txt")
+
+def should_update_data():
+    """Check if data should be updated (older than 7 days)"""
+    if not os.path.exists(LAST_UPDATE_FILE):
+        return True
+    
+    with open(LAST_UPDATE_FILE, 'r') as f:
+        last_update = datetime.strptime(f.read().strip(), '%Y-%m-%d')
+    
+    return datetime.now() - last_update > timedelta(days=7)
 
 @st.cache_data
 def fetch_us_companies():
@@ -65,52 +82,79 @@ def fetch_details_parallel(tickers, max_workers=10):
                 st.error(f"Error fetching details: {str(e)}")
     return results
 
-# Fetch companies
-companies_df = fetch_us_companies()
-
-if not companies_df.empty:
-    search_query = st.text_input("Enter keywords to search in company descriptions:", "").lower()
+@st.cache_data
+def fetch_and_store_company_details():
+    """Fetch all company details and store them"""
+    if not os.path.exists(DATA_DIR):
+        os.makedirs(DATA_DIR)
     
-    if search_query:
-        st.info("Fetching and filtering companies... This may take a moment.")
-        
-        # Get all tickers
-        tickers = companies_df['ticker'].tolist()
-        
-        # Fetch details in parallel
-        with st.spinner('Loading company details...'):
-            all_details = fetch_details_parallel(tickers)
-        
-        # Filter companies based on description
-        filtered_companies = []
-        for details in all_details:
-            if search_query in details['description']:
-                ticker = details['ticker']
-                company = companies_df[companies_df['ticker'] == ticker].iloc[0]
-                
-                # Format market cap
-                market_cap = details['market_cap']
-                if isinstance(market_cap, (int, float)) and market_cap != 'N/A':
-                    market_cap = f"${market_cap/1e9:.2f}B"
-                
-                # Truncate description
-                description = details['description'][:200] + '...' if len(details['description']) > 200 else details['description']
-                
-                filtered_companies.append({
-                    'Ticker': ticker,
-                    'Name': company['title'],
-                    'Description': description,
-                    'Sector': details['sector'],
-                    'Market Cap': market_cap
-                })
-        
-        if filtered_companies:
-            detailed_df = pd.DataFrame(filtered_companies)
-            st.write(f"Found {len(filtered_companies)} companies matching your search:")
-            st.dataframe(detailed_df, use_container_width=True)
-        else:
-            st.write("No companies found matching your search criteria.")
+    # First get the list of companies
+    companies_df = fetch_us_companies()
+    tickers = companies_df['ticker'].tolist()
+    
+    # Fetch details in parallel
+    with st.spinner('Updating company database... This may take a few minutes.'):
+        all_details = fetch_details_parallel(tickers)
+    
+    # Store the data
+    data = {
+        'companies': companies_df.to_dict(orient='records'),
+        'details': all_details
+    }
+    
+    with open(COMPANIES_FILE, 'w') as f:
+        json.dump(data, f)
+    
+    # Update last update time
+    with open(LAST_UPDATE_FILE, 'w') as f:
+        f.write(datetime.now().strftime('%Y-%m-%d'))
+    
+    return data
+
+def load_company_data():
+    """Load company data from file or fetch if needed"""
+    if not os.path.exists(COMPANIES_FILE) or should_update_data():
+        return fetch_and_store_company_details()
+    
+    with open(COMPANIES_FILE, 'r') as f:
+        return json.load(f)
+
+# Load data
+data = load_company_data()
+companies_df = pd.DataFrame(data['companies'])
+company_details = {detail['ticker']: detail for detail in data['details']}
+
+# Search interface
+search_query = st.text_input("Enter keywords to search in company descriptions:", "").lower()
+
+if search_query:
+    # Filter companies based on description
+    filtered_companies = []
+    for ticker, details in company_details.items():
+        if search_query in details['description']:
+            company = companies_df[companies_df['ticker'] == ticker].iloc[0]
+            
+            # Format market cap
+            market_cap = details['market_cap']
+            if isinstance(market_cap, (int, float)) and market_cap != 'N/A':
+                market_cap = f"${market_cap/1e9:.2f}B"
+            
+            # Truncate description
+            description = details['description'][:200] + '...' if len(details['description']) > 200 else details['description']
+            
+            filtered_companies.append({
+                'Ticker': ticker,
+                'Name': company['title'],
+                'Description': description,
+                'Sector': details['sector'],
+                'Market Cap': market_cap
+            })
+    
+    if filtered_companies:
+        detailed_df = pd.DataFrame(filtered_companies)
+        st.write(f"Found {len(filtered_companies)} companies matching your search:")
+        st.dataframe(detailed_df, use_container_width=True)
     else:
-        st.write("Enter keywords to search through company descriptions.")
+        st.write("No companies found matching your search criteria.")
 else:
-    st.write("No company data available.")
+    st.write("Enter keywords to search through company descriptions.")
