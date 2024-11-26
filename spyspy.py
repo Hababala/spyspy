@@ -5,30 +5,39 @@ import numpy as np
 from scipy import stats
 import pandas as pd
 import requests
+import time
 
 st.title("Stock Market Analysis")
-
-# Initialize session state for API key
-if 'sec_api_key' not in st.session_state:
-    st.session_state.sec_api_key = "ebded077ff8114c8e3a431c1dcfa8a8a3bab629171ac5a00d68024d113d50c56"
 
 @st.cache_data
 def get_sec_companies():
     """Get all companies from SEC API"""
     headers = {
-        'User-Agent': 'Mozilla/5.0',
+        'User-Agent': 'Company Name admin@company.com',  # Required by SEC
         'Accept-Encoding': 'gzip, deflate',
         'Host': 'www.sec.gov'
     }
     
     try:
+        # Add delay to comply with SEC rate limits
+        time.sleep(0.1)
         url = "https://www.sec.gov/files/company_tickers.json"
         response = requests.get(url, headers=headers)
+        
+        if response.status_code != 200:
+            st.error(f"Error: Status code {response.status_code}")
+            return pd.DataFrame()
+            
         companies_dict = response.json()
         
         # Convert to DataFrame
         df = pd.DataFrame.from_dict(companies_dict, orient='index')
-        df.columns = ['ticker', 'name', 'cik']
+        # Rename columns to match expected format
+        df = df.rename(columns={
+            'ticker': 'symbol',
+            'title': 'name',
+            'cik_str': 'cik'
+        })
         return df
     except Exception as e:
         st.error(f"Error fetching companies: {str(e)}")
@@ -36,34 +45,23 @@ def get_sec_companies():
 
 # Get companies list
 companies_df = get_sec_companies()
-symbols_list = companies_df['ticker'].tolist()
 
-# Add search box
-search_query = st.text_input("Search for a symbol:", "")
-
-if search_query:
-    # Filter symbols (show max 10 results)
-    filtered_symbols = [s for s in symbols_list if search_query.upper() in s.upper()][:10]
+if not companies_df.empty:
+    symbols_list = companies_df['symbol'].tolist()
     
-    if filtered_symbols:
-        col1, col2 = st.columns([1, 2])
+    # Add search box
+    search_query = st.text_input("Search for a symbol:", "")
+
+    if search_query:
+        # Filter symbols (show max 10 results)
+        filtered_symbols = [s for s in symbols_list if search_query.upper() in s.upper()][:10]
         
-        with col1:
-            selected_symbol = st.radio("Select a symbol:", filtered_symbols)
-            st.session_state.selected_symbol = selected_symbol
-        
-        with col2:
-            if selected_symbol:
-                ticker = yf.Ticker(selected_symbol)
-                current_data = ticker.history(period="1d")
-                
-                if not current_data.empty:
-                    current_price = current_data['Close'].iloc[-1]
-                    st.metric(
-                        label="Current Price",
-                        value=f"${current_price:.2f}",
-                        delta=f"{(current_price - current_data['Open'].iloc[0]):.2f}"
-                    )
+        if filtered_symbols:
+            col1, col2 = st.columns([1, 2])
+            
+            with col1:
+                selected_symbol = st.radio("Select a symbol:", filtered_symbols)
+                st.session_state.selected_symbol = selected_symbol
         
         if selected_symbol:
             # Show detailed data in tabs
