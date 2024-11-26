@@ -3,6 +3,8 @@ import yfinance as yf
 import pandas as pd
 from openbb import obb
 import time
+import json
+import plotly.graph_objects as go
 
 # Initialize OpenBB
 obb.account.login(pat="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiQWpIZ2hsazVtcXk0VEV5V1FEUFRlakpqS3NYQjcxOXd5NzhyRjI2MiIsImV4cCI6MTc2Mjg4OTc4N30.4cKXMKxmZxc9CgWPIyAjF7T8nCyH0gThySmeACR-I1o")
@@ -128,4 +130,76 @@ if keywords:
         )
         
         if selected_ticker:
-            # Rest of your code for detailed company view...
+            company_info = sorted_companies[selected_ticker]
+            
+            # Display detailed company view
+            st.subheader(f"{selected_ticker} - {company_info['name']}")
+            
+            # Company details in columns
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write("**Sector:**", company_info['sector'])
+                st.write("**Industry:**", company_info['industry'])
+                st.write("**Market Cap:**", f"${company_info['market_cap']:,}")
+            
+            with col2:
+                # Add stock price metrics
+                try:
+                    stock = yf.Ticker(selected_ticker)
+                    current_data = stock.history(period="1d")
+                    if not current_data.empty:
+                        current_price = current_data['Close'].iloc[-1]
+                        open_price = current_data['Open'].iloc[0]
+                        st.metric(
+                            label="Current Price",
+                            value=f"${current_price:.2f}",
+                            delta=f"{(current_price - open_price):.2f}"
+                        )
+                except Exception as e:
+                    st.error(f"Error fetching current price: {str(e)}")
+            
+            # Full company description
+            st.subheader("Business Description")
+            st.write(company_info['full_description'])
+            
+            # Stock price chart
+            st.subheader("Stock Price (1 Year)")
+            try:
+                hist = stock.history(period="1y")
+                if not hist.empty:
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=hist.index,
+                        y=hist['Close'],
+                        name='Close Price',
+                        line=dict(color='blue', width=2)
+                    ))
+                    fig.update_layout(
+                        title=f"{selected_ticker} Price History",
+                        yaxis_title="Price ($)",
+                        xaxis_title="Date",
+                        showlegend=True,
+                        hovermode='x unified'
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.error(f"Error creating price chart: {str(e)}")
+            
+            # Add download button for company info
+            company_data = {
+                'ticker': selected_ticker,
+                'name': company_info['name'],
+                'description': company_info['full_description'],
+                'sector': company_info['sector'],
+                'industry': company_info['industry'],
+                'market_cap': company_info['market_cap']
+            }
+            
+            st.download_button(
+                label="Download Company Info",
+                data=json.dumps(company_data, indent=2),
+                file_name=f"{selected_ticker}_info.json",
+                mime="application/json"
+            )
+    else:
+        st.warning("No companies found matching all keywords")
