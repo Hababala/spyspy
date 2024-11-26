@@ -1,26 +1,21 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-from openbb import obb
+import requests
 import time
-import os
-
-# Initialize OpenBB with environment variable
-os.environ["OPENBB_API_KEY"] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiQWpIZ2hsazVtcXk0VEV5V1FEUFRlakpqS3NYQjcxOXd5NzhyRjI2MiIsImV4cCI6MTc2Mjg4OTc4N30.4cKXMKxmZxc9CgWPIyAjF7T8nCyH0gThySmeACR-I1o"
-
-try:
-    # Initialize OpenBB
-    obb.account.login(api_key=os.environ["OPENBB_API_KEY"])
-except Exception as e:
-    st.error(f"Error initializing OpenBB: {str(e)}")
-    st.stop()
 
 @st.cache_data
-def load_all_companies():
-    """Load all US listed companies using OpenBB"""
+def load_sec_companies():
+    """Load all companies from SEC API"""
     try:
-        # Get companies from OpenBB
-        companies_df = obb.equity.search("", provider="sec").to_df()
+        # SEC Company Tickers API endpoint
+        url = "https://www.sec.gov/files/company_tickers.json"
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+        companies_dict = response.json()
+        
+        # Convert to DataFrame
+        companies_df = pd.DataFrame.from_dict(companies_dict, orient='index')
+        companies_df['ticker'] = companies_df['ticker'].str.strip()
         
         # Initialize dictionary to store company info
         all_companies = {}
@@ -29,18 +24,17 @@ def load_all_companies():
         progress_bar = st.progress(0)
         total_companies = len(companies_df)
         
-        for i, row in enumerate(companies_df.itertuples()):
+        for i, row in companies_df.iterrows():
             try:
-                company = yf.Ticker(row.symbol)
+                company = yf.Ticker(row['ticker'])
                 info = company.info
                 if 'longBusinessSummary' in info:
-                    # Create a one-line summary (first sentence or first 200 characters)
                     description = info['longBusinessSummary']
                     summary = description.split('.')[0] + '.' if '.' in description else description[:200] + '...'
                     
-                    all_companies[row.symbol] = {
-                        'ticker': row.symbol,
-                        'name': info.get('longName', row.name),
+                    all_companies[row['ticker']] = {
+                        'ticker': row['ticker'],
+                        'name': info.get('longName', row['title']),
                         'description': summary,
                         'sector': info.get('sector', 'N/A'),
                         'industry': info.get('industry', 'N/A'),
@@ -52,9 +46,7 @@ def load_all_companies():
             
             # Update progress
             progress_bar.progress(min((i + 1) / total_companies, 1.0))
-            
-            # Add small delay to avoid rate limiting
-            time.sleep(0.1)
+            time.sleep(0.1)  # Rate limiting
         
         progress_bar.empty()
         return all_companies
@@ -69,7 +61,7 @@ st.title("US Stock Market Company Search")
 # Initialize or load company data
 if 'all_companies' not in st.session_state:
     st.info("Loading company data... This may take a while.")
-    st.session_state.all_companies = load_all_companies()
+    st.session_state.all_companies = load_sec_companies()
 
 # Search interface
 col1, col2 = st.columns([2, 1])
