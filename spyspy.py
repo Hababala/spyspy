@@ -8,8 +8,8 @@ st.title("US Listed Companies")
 def fetch_us_companies():
     """Fetch all US listed companies using a reliable API"""
     api_key = "ebded077ff8114c8e3a431c1dcfa8a8a3bab629171ac5a00d68024d113d50c56"
-    url = "https://api.sec-api.io?token={api_key}&query={{'query':{{'query_string':{{'query':'*'}}}},'from':0,'size':10000}}"
-    headers = {'Authorization': f'{api_key}'}
+    url = f"https://api.sec-api.io?token={api_key}&query={{'query':{{'query_string':{{'query':'*'}}}},'from':0,'size':10000}}"
+    headers = {'Authorization': f'Bearer {api_key}'}
     
     try:
         response = requests.get(url, headers=headers)
@@ -20,8 +20,15 @@ def fetch_us_companies():
             return pd.DataFrame()
         
         data = response.json()
-        df = pd.DataFrame(data['hits']['hits'])
-        return df
+        
+        # Check if 'hits' is in the response
+        if 'hits' in data and 'hits' in data['hits']:
+            df = pd.DataFrame(data['hits']['hits'])
+            return df
+        else:
+            st.error("Unexpected response format")
+            st.write("Response content:", data)
+            return pd.DataFrame()
     
     except Exception as e:
         st.error(f"Error fetching companies: {str(e)}")
