@@ -25,6 +25,53 @@ def should_update_data():
     return datetime.now() - last_update > timedelta(days=7)
 
 @st.cache_data
+def fetch_company_description(cik):
+    """Fetch company description from SEC filings"""
+    url = "https://api.sec-api.io/full-text-search"
+    api_key = "your_api_key_here"  # You'll need to sign up for an API key
+    
+    # Query for the most recent 10-K filing's business description
+    query = {
+        "query": {
+            "query_string": {
+                "query": "\"Item 1. Business\"",
+                "fields": ["text"]
+            }
+        },
+        "from": "0",
+        "size": "1",
+        "sort": [{"filedAt": {"order": "desc"}}]
+    }
+    
+    headers = {
+        'Authorization': f'Bearer {api_key}',
+        'Content-Type': 'application/json'
+    }
+    
+    try:
+        response = requests.post(
+            f"{url}?cik={cik}",
+            headers=headers,
+            json=query
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data['filings']:
+                # Extract the business description section
+                text = data['filings'][0]['text']
+                # Find the section between "Item 1. Business" and "Item 1A. Risk Factors"
+                start = text.find("Item 1. Business")
+                end = text.find("Item 1A. Risk Factors")
+                if start != -1 and end != -1:
+                    description = text[start:end].strip()
+                    # Truncate and clean up the description
+                    return description[:1000] + "..."
+        return "No description available"
+    except Exception as e:
+        return f"Error fetching description: {str(e)}"
+
+@st.cache_data
 def fetch_us_companies():
     """Fetch all US listed companies using SEC API"""
     url = "https://www.sec.gov/files/company_tickers.json"
@@ -40,8 +87,11 @@ def fetch_us_companies():
             companies_dict = response.json()
             df = pd.DataFrame.from_dict(companies_dict, orient='index')
             df.columns = ['cik_str', 'ticker', 'title']
-            # Limit to first 500 companies for testing
-            return df.head(500)  # Adjust this number as needed
+            
+            # Add company descriptions
+            df['description'] = df['cik_str'].apply(lambda x: fetch_company_description(x))
+            
+            return df
         else:
             st.error(f"Error: Status code {response.status_code}")
             return pd.DataFrame()
@@ -70,12 +120,8 @@ def fetch_company_details_batch(ticker):
         }
 
 def fetch_details_parallel(tickers, max_workers=10):
-    """Fetch company details in parallel with progress bar"""
+    """Fetch company details in parallel"""
     results = []
-    total = len(tickers)
-    progress_bar = st.progress(0)
-    completed = 0
-    
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_ticker = {executor.submit(fetch_company_details_batch, ticker): ticker 
                           for ticker in tickers}
@@ -83,12 +129,8 @@ def fetch_details_parallel(tickers, max_workers=10):
             try:
                 data = future.result()
                 results.append(data)
-                completed += 1
-                progress_bar.progress(completed / total)
             except Exception as e:
                 st.error(f"Error fetching details: {str(e)}")
-    
-    progress_bar.empty()
     return results
 
 @st.cache_data
@@ -137,32 +179,16 @@ company_details = {detail['ticker']: detail for detail in data['details']}
 search_query = st.text_input("Enter keywords to search in company descriptions:", "").lower()
 
 if search_query:
-    # Filter companies based on description
-    filtered_companies = []
-    for ticker, details in company_details.items():
-        if search_query in details['description']:
-            company = companies_df[companies_df['ticker'] == ticker].iloc[0]
-            
-            # Format market cap
-            market_cap = details['market_cap']
-            if isinstance(market_cap, (int, float)) and market_cap != 'N/A':
-                market_cap = f"${market_cap/1e9:.2f}B"
-            
-            # Truncate description
-            description = details['description'][:200] + '...' if len(details['description']) > 200 else details['description']
-            
-            filtered_companies.append({
-                'Ticker': ticker,
-                'Name': company['title'],
-                'Description': description,
-                'Sector': details['sector'],
-                'Market Cap': market_cap
-            })
+    filtered_df = companies_df[
+        companies_df['description'].str.lower().str.contains(search_query, na=False)
+    ]
     
-    if filtered_companies:
-        detailed_df = pd.DataFrame(filtered_companies)
-        st.write(f"Found {len(filtered_companies)} companies matching your search:")
-        st.dataframe(detailed_df, use_container_width=True)
+    if not filtered_df.empty:
+        st.write(f"Found {len(filtered_df)} companies matching your search:")
+        st.dataframe(
+            filtered_df[['ticker', 'title', 'description']],
+            use_container_width=True
+        )
     else:
         st.write("No companies found matching your search criteria.")
 else:
