@@ -3,9 +3,17 @@ import yfinance as yf
 import pandas as pd
 from openbb import obb
 import time
+import os
 
-# Initialize OpenBB
-obb.account.login(pat="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiQWpIZ2hsazVtcXk0VEV5V1FEUFRlakpqS3NYQjcxOXd5NzhyRjI2MiIsImV4cCI6MTc2Mjg4OTc4N30.4cKXMKxmZxc9CgWPIyAjF7T8nCyH0gThySmeACR-I1o")
+# Initialize OpenBB with environment variable
+os.environ["OPENBB_API_KEY"] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiQWpIZ2hsazVtcXk0VEV5V1FEUFRlakpqS3NYQjcxOXd5NzhyRjI2MiIsImV4cCI6MTc2Mjg4OTc4N30.4cKXMKxmZxc9CgWPIyAjF7T8nCyH0gThySmeACR-I1o"
+
+try:
+    # Initialize OpenBB
+    obb.account.login(api_key=os.environ["OPENBB_API_KEY"])
+except Exception as e:
+    st.error(f"Error initializing OpenBB: {str(e)}")
+    st.stop()
 
 @st.cache_data
 def load_all_companies():
