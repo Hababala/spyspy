@@ -13,27 +13,35 @@ st.title("Stock Market Analysis")
 def get_sec_companies():
     """Get all companies from SEC API"""
     headers = {
-        'User-Agent': 'Mozilla/5.0',  # Simple User-Agent
-        'Accept-Encoding': 'gzip, deflate'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept-Encoding': 'gzip, deflate',
+        'Host': 'www.sec.gov',
+        'Accept': 'application/json',
+        'Connection': 'keep-alive'
     }
     
     try:
+        # Add delay to comply with SEC rate limits
+        time.sleep(0.1)
         url = "https://www.sec.gov/files/company_tickers.json"
         response = requests.get(url, headers=headers)
         
         if response.status_code != 200:
             st.error(f"Error: Status code {response.status_code}")
+            st.write("Response content:", response.text)  # Debug info
             return pd.DataFrame()
             
         companies_dict = response.json()
         
-        # Convert to DataFrame and print column names for debugging
+        # Convert to DataFrame
         df = pd.DataFrame.from_dict(companies_dict, orient='index')
         st.write("Debug - DataFrame columns:", df.columns.tolist())
+        st.write("Debug - First few rows:", df.head())  # Debug info
         
         return df
     except Exception as e:
         st.error(f"Error fetching companies: {str(e)}")
+        st.write("Full error:", str(e))  # Debug info
         return pd.DataFrame()
 
 # Get companies list
