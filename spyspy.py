@@ -1,106 +1,91 @@
 import streamlit as st
 import pandas as pd
+import yfinance as yf
 import requests
-import json
-import os
-from datetime import datetime, timedelta
 
-st.title("US Listed Companies")
+st.title("Russell 1000 Companies")
 
 @st.cache_data
-def fetch_us_companies():
-    """Fetch basic company list from SEC API"""
-    url = "https://www.sec.gov/files/company_tickers.json"
-    headers = {
-        'User-Agent': 'YourAppName/1.0 (Contact: your-email@example.com)',
-        'Accept-Encoding': 'gzip, deflate',
-        'Host': 'www.sec.gov'
-    }
+def fetch_russell1000():
+    """Fetch Russell 1000 constituents"""
+    # Using Wikipedia as a quick source for Russell 1000 constituents
+    url = "https://en.wikipedia.org/wiki/Russell_1000_Index"
     
     try:
-        response = requests.get(url, headers=headers)
-        if response.status_code == 200:
-            companies_dict = response.json()
-            df = pd.DataFrame.from_dict(companies_dict, orient='index')
-            df.columns = ['cik_str', 'ticker', 'title']
-            return df
-        else:
-            st.error(f"Error: Status code {response.status_code}")
-            return pd.DataFrame()
+        # Read all tables from the Wikipedia page
+        tables = pd.read_html(url)
+        # The constituents table is typically the first table
+        df = tables[0]
+        
+        # Clean up column names
+        df.columns = ['ticker', 'company', 'sector', 'industry']
+        
+        return df
     except Exception as e:
-        st.error(f"Error fetching companies: {str(e)}")
+        st.error(f"Error fetching Russell 1000 constituents: {str(e)}")
         return pd.DataFrame()
 
 @st.cache_data
-def fetch_company_description(cik):
-    """Fetch company description from SEC filings only when needed"""
-    url = "https://api.sec-api.io/full-text-search"
-    api_key = "your_api_key_here"
-    
-    query = {
-        "query": {
-            "query_string": {
-                "query": "\"Item 1. Business\"",
-                "fields": ["text"]
-            }
-        },
-        "from": "0",
-        "size": "1",
-        "sort": [{"filedAt": {"order": "desc"}}]
-    }
-    
-    headers = {
-        'Authorization': f'Bearer {api_key}',
-        'Content-Type': 'application/json'
-    }
-    
+def fetch_stock_info(ticker):
+    """Fetch basic stock information"""
     try:
-        response = requests.post(f"{url}?cik={cik}", headers=headers, json=query)
-        if response.status_code == 200:
-            data = response.json()
-            if data['filings']:
-                text = data['filings'][0]['text']
-                start = text.find("Item 1. Business")
-                end = text.find("Item 1A. Risk Factors")
-                if start != -1 and end != -1:
-                    return text[start:end].strip()[:1000] + "..."
-        return "No description available"
-    except Exception as e:
-        return f"Error fetching description: {str(e)}"
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        return {
+            'Market Cap': info.get('marketCap', 'N/A'),
+            'Sector': info.get('sector', 'N/A'),
+            'Industry': info.get('industry', 'N/A'),
+            'Description': info.get('longBusinessSummary', 'N/A')
+        }
+    except:
+        return {
+            'Market Cap': 'N/A',
+            'Sector': 'N/A',
+            'Industry': 'N/A',
+            'Description': 'N/A'
+        }
 
-# Load basic company list (this is fast)
-companies_df = fetch_us_companies()
+# Load Russell 1000 companies
+companies_df = fetch_russell1000()
 
 # Search interface
-search_query = st.text_input("Search for companies by name:", "").lower()
+search_query = st.text_input("Search for companies (name or ticker):", "").lower()
 
-if search_query:
-    # First filter by company name (instant)
-    name_filtered_df = companies_df[
-        companies_df['title'].str.lower().str.contains(search_query, na=False)
-    ]
-    
-    if not name_filtered_df.empty:
-        st.write(f"Found {len(name_filtered_df)} companies matching your search.")
+if not companies_df.empty:
+    if search_query:
+        # Filter companies based on search query
+        filtered_df = companies_df[
+            companies_df['company'].str.lower().str.contains(search_query, na=False) |
+            companies_df['ticker'].str.lower().str.contains(search_query, na=False)
+        ]
         
-        # Option to fetch detailed descriptions
-        if st.button("Load company descriptions"):
-            with st.spinner('Fetching company descriptions...'):
-                # Only fetch descriptions for filtered companies
-                name_filtered_df['description'] = name_filtered_df['cik_str'].apply(
-                    lambda x: fetch_company_description(str(x).zfill(10))
-                )
-                st.dataframe(
-                    name_filtered_df[['ticker', 'title', 'description']],
-                    use_container_width=True
-                )
+        if not filtered_df.empty:
+            st.write(f"Found {len(filtered_df)} companies matching your search.")
+            
+            # Option to fetch detailed info
+            if st.button("Load detailed information"):
+                with st.spinner('Fetching company details...'):
+                    details = []
+                    for _, row in filtered_df.iterrows():
+                        info = fetch_stock_info(row['ticker'])
+                        details.append({
+                            'Ticker': row['ticker'],
+                            'Company': row['company'],
+                            'Market Cap': f"${info['Market Cap']/1e9:.2f}B" if isinstance(info['Market Cap'], (int, float)) else 'N/A',
+                            'Sector': info['Sector'],
+                            'Industry': info['Industry'],
+                            'Description': info['Description'][:200] + '...' if len(info['Description']) > 200 else info['Description']
+                        })
+                    
+                    details_df = pd.DataFrame(details)
+                    st.dataframe(details_df, use_container_width=True)
+            else:
+                # Show basic info
+                st.dataframe(filtered_df, use_container_width=True)
         else:
-            # Show basic info without descriptions
-            st.dataframe(
-                name_filtered_df[['ticker', 'title']],
-                use_container_width=True
-            )
+            st.write("No companies found matching your search criteria.")
     else:
-        st.write("No companies found matching your search criteria.")
+        st.write(f"Showing all {len(companies_df)} Russell 1000 companies:")
+        st.dataframe(companies_df, use_container_width=True)
 else:
-    st.write("Enter a company name to search.")
+    st.write("Error loading Russell 1000 companies.")
