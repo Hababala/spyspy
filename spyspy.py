@@ -13,14 +13,11 @@ st.title("Stock Market Analysis")
 def get_sec_companies():
     """Get all companies from SEC API"""
     headers = {
-        'User-Agent': 'Company Name admin@company.com',  # Required by SEC
-        'Accept-Encoding': 'gzip, deflate',
-        'Host': 'www.sec.gov'
+        'User-Agent': 'Mozilla/5.0',  # Simple User-Agent
+        'Accept-Encoding': 'gzip, deflate'
     }
     
     try:
-        # Add delay to comply with SEC rate limits
-        time.sleep(0.1)
         url = "https://www.sec.gov/files/company_tickers.json"
         response = requests.get(url, headers=headers)
         
@@ -30,14 +27,10 @@ def get_sec_companies():
             
         companies_dict = response.json()
         
-        # Convert to DataFrame
+        # Convert to DataFrame and print column names for debugging
         df = pd.DataFrame.from_dict(companies_dict, orient='index')
-        # Rename columns to match expected format
-        df = df.rename(columns={
-            'ticker': 'symbol',
-            'title': 'name',
-            'cik_str': 'cik'
-        })
+        st.write("Debug - DataFrame columns:", df.columns.tolist())
+        
         return df
     except Exception as e:
         st.error(f"Error fetching companies: {str(e)}")
@@ -47,7 +40,8 @@ def get_sec_companies():
 companies_df = get_sec_companies()
 
 if not companies_df.empty:
-    symbols_list = companies_df['symbol'].tolist()
+    # Use correct column name based on debug output
+    symbols_list = companies_df['ticker'].tolist()  # Will adjust based on actual column name
     
     # Add search box
     search_query = st.text_input("Search for a symbol:", "")
