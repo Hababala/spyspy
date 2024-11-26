@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
+import yfinance as yf
 import time
 
 st.title("US Listed Companies")
@@ -37,11 +38,55 @@ def fetch_us_companies():
         st.error(f"Error fetching companies: {str(e)}")
         return pd.DataFrame()
 
+def fetch_company_details(ticker):
+    """Fetch additional company details using yfinance"""
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        return {
+            'description': info.get('longBusinessSummary', 'N/A'),
+            'sector': info.get('sector', 'N/A'),
+            'market_cap': info.get('marketCap', 'N/A')
+        }
+    except Exception as e:
+        return {
+            'description': 'N/A',
+            'sector': 'N/A',
+            'market_cap': 'N/A'
+        }
+
 # Fetch and display companies
 companies_df = fetch_us_companies()
 
 if not companies_df.empty:
-    st.write("List of US Listed Companies:")
-    st.dataframe(companies_df)
+    # Add a search bar
+    search_query = st.text_input("Search for a company:", "")
+    
+    if search_query:
+        # Filter companies based on search query
+        filtered_df = companies_df[companies_df['title'].str.contains(search_query, case=False, na=False)]
+        
+        # Fetch additional details for each filtered company
+        details_list = []
+        for _, row in filtered_df.iterrows():
+            details = fetch_company_details(row['ticker'])
+            details_list.append({
+                'Ticker': row['ticker'],
+                'Name': row['title'],
+                'Description': details['description'],
+                'Sector': details['sector'],
+                'Market Cap': details['market_cap']
+            })
+        
+        # Convert to DataFrame for display
+        detailed_df = pd.DataFrame(details_list)
+        
+        if not detailed_df.empty:
+            st.write("Filtered Companies:")
+            st.dataframe(detailed_df)
+        else:
+            st.write("No companies match the search criteria.")
+    else:
+        st.write("Enter a keyword to search for companies.")
 else:
     st.write("No data available.")
