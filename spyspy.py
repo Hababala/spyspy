@@ -1,101 +1,101 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import plotly.graph_objects as go
+import concurrent.futures
 
-st.title("Stock Price Analysis")
-
-# Add a search box for stock symbols
-search_query = st.text_input("Search for a stock symbol:", "AAPL")
+st.title("1000 Largest US Stocks")
 
 @st.cache_data
-def get_stock_data(symbol):
-    """Fetch stock data for the last year"""
+def get_sp500_symbols():
+    """Get S&P 500 symbols"""
+    sp500 = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')[0]
+    return sp500['Symbol'].tolist()
+
+@st.cache_data
+def get_nasdaq100_symbols():
+    """Get Nasdaq 100 symbols"""
+    nasdaq100 = pd.read_html('https://en.wikipedia.org/wiki/Nasdaq-100')[4]
+    return nasdaq100['Ticker'].tolist()
+
+@st.cache_data
+def get_stock_info(symbol):
+    """Get stock information including market cap and description"""
     try:
-        ticker = yf.Ticker(symbol)
-        data = ticker.history(period="1y")
-        return data
-    except Exception as e:
-        st.error(f"Error fetching data: {str(e)}")
-        return pd.DataFrame()
+        stock = yf.Ticker(symbol)
+        info = stock.info
+        return {
+            'Symbol': symbol,
+            'Name': info.get('longName', 'N/A'),
+            'Market Cap': info.get('marketCap', 0),
+            'Description': info.get('longBusinessSummary', 'N/A'),
+            'Sector': info.get('sector', 'N/A'),
+            'Industry': info.get('industry', 'N/A')
+        }
+    except:
+        return None
+
+# Get symbols from major indices
+sp500_symbols = get_sp500_symbols()
+nasdaq100_symbols = get_nasdaq100_symbols()
+
+# Combine and remove duplicates
+all_symbols = list(set(sp500_symbols + nasdaq100_symbols))
+
+# Show progress
+progress_bar = st.progress(0)
+status_text = st.empty()
+
+# Fetch data for all stocks in parallel
+stocks_data = []
+with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    future_to_symbol = {executor.submit(get_stock_info, symbol): symbol for symbol in all_symbols}
+    completed = 0
+    
+    for future in concurrent.futures.as_completed(future_to_symbol):
+        symbol = future_to_symbol[future]
+        try:
+            data = future.result()
+            if data and data['Market Cap'] > 0:
+                stocks_data.append(data)
+        except Exception as e:
+            st.error(f"Error processing {symbol}: {str(e)}")
+        
+        completed += 1
+        progress = completed / len(all_symbols)
+        progress_bar.progress(progress)
+        status_text.text(f"Processed {completed}/{len(all_symbols)} stocks...")
+
+# Convert to DataFrame and sort by market cap
+df = pd.DataFrame(stocks_data)
+df = df.sort_values('Market Cap', ascending=False).head(1000)
+
+# Format market cap
+df['Market Cap'] = df['Market Cap'].apply(lambda x: f"${x/1e9:.2f}B")
+
+# Add search functionality
+search_query = st.text_input("Search companies by name, symbol, or description:", "")
 
 if search_query:
-    # Get the data
-    df = get_stock_data(search_query)
-    
-    if not df.empty:
-        # Show current price and daily change
-        current_price = df['Close'].iloc[-1]
-        price_change = current_price - df['Open'].iloc[-1]
-        
-        st.metric(
-            label="Current Price",
-            value=f"${current_price:.2f}",
-            delta=f"${price_change:.2f}"
-        )
-        
-        # Create tabs for different views
-        tab1, tab2 = st.tabs(["Chart", "Data"])
-        
-        with tab1:
-            # Create interactive plot with Plotly
-            fig = go.Figure()
-            
-            # Add candlestick chart
-            fig.add_trace(go.Candlestick(
-                x=df.index,
-                open=df['Open'],
-                high=df['High'],
-                low=df['Low'],
-                close=df['Close'],
-                name='OHLC'
-            ))
-            
-            # Update layout
-            fig.update_layout(
-                title=f"{search_query} Stock Price - Last Year",
-                yaxis_title="Price ($)",
-                xaxis_title="Date",
-                template="plotly_dark"
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Add volume chart
-            volume_fig = go.Figure()
-            volume_fig.add_trace(go.Bar(
-                x=df.index,
-                y=df['Volume'],
-                name='Volume'
-            ))
-            
-            volume_fig.update_layout(
-                title="Trading Volume",
-                yaxis_title="Volume",
-                xaxis_title="Date",
-                template="plotly_dark"
-            )
-            
-            st.plotly_chart(volume_fig, use_container_width=True)
-        
-        with tab2:
-            st.write("Historical Data:")
-            st.dataframe(df)
-            
-            # Add basic statistics
-            st.subheader("Summary Statistics")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.write("Price Statistics")
-                st.write(f"Average Price: ${df['Close'].mean():.2f}")
-                st.write(f"Highest Price: ${df['High'].max():.2f}")
-                st.write(f"Lowest Price: ${df['Low'].min():.2f}")
-            
-            with col2:
-                st.write("Volume Statistics")
-                st.write(f"Average Volume: {df['Volume'].mean():,.0f}")
-                st.write(f"Max Volume: {df['Volume'].max():,.0f}")
-                st.write(f"Min Volume: {df['Volume'].min():,.0f}")
-    else:
-        st.write(f"Error loading data for {search_query}")
+    # Case-insensitive search across multiple columns
+    mask = (
+        df['Symbol'].str.contains(search_query, case=False, na=False) |
+        df['Name'].str.contains(search_query, case=False, na=False) |
+        df['Description'].str.contains(search_query, case=False, na=False) |
+        df['Sector'].str.contains(search_query, case=False, na=False) |
+        df['Industry'].str.contains(search_query, case=False, na=False)
+    )
+    filtered_df = df[mask]
+    st.write(f"Found {len(filtered_df)} matching companies")
+    st.dataframe(filtered_df)
+else:
+    st.write(f"Showing all {len(df)} companies")
+    st.dataframe(df)
+
+# Add download button
+csv = df.to_csv(index=False).encode('utf-8')
+st.download_button(
+    label="Download data as CSV",
+    data=csv,
+    file_name="largest_us_stocks.csv",
+    mime="text/csv"
+)
