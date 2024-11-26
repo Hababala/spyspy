@@ -8,14 +8,20 @@ st.title("1000 Largest US Stocks")
 @st.cache_data
 def get_sp500_symbols():
     """Get S&P 500 symbols"""
-    sp500 = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')[0]
-    return sp500['Symbol'].tolist()
+    try:
+        sp500 = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')[0]
+        return sp500['Symbol'].tolist()
+    except:
+        return []
 
 @st.cache_data
-def get_nasdaq100_symbols():
-    """Get Nasdaq 100 symbols"""
-    nasdaq100 = pd.read_html('https://en.wikipedia.org/wiki/Nasdaq-100')[4]
-    return nasdaq100['Ticker'].tolist()
+def get_russell1000_symbols():
+    """Get Russell 1000 symbols"""
+    try:
+        russell = pd.read_html('https://en.wikipedia.org/wiki/Russell_1000_Index')[1]
+        return russell['Ticker'].tolist()
+    except:
+        return []
 
 @st.cache_data
 def get_stock_info(symbol):
@@ -34,12 +40,8 @@ def get_stock_info(symbol):
     except:
         return None
 
-# Get symbols from major indices
-sp500_symbols = get_sp500_symbols()
-nasdaq100_symbols = get_nasdaq100_symbols()
-
-# Combine and remove duplicates
-all_symbols = list(set(sp500_symbols + nasdaq100_symbols))
+# Get symbols from indices
+symbols_list = list(set(get_sp500_symbols() + get_russell1000_symbols()))
 
 # Show progress
 progress_bar = st.progress(0)
@@ -48,7 +50,7 @@ status_text = st.empty()
 # Fetch data for all stocks in parallel
 stocks_data = []
 with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-    future_to_symbol = {executor.submit(get_stock_info, symbol): symbol for symbol in all_symbols}
+    future_to_symbol = {executor.submit(get_stock_info, symbol): symbol for symbol in symbols_list}
     completed = 0
     
     for future in concurrent.futures.as_completed(future_to_symbol):
@@ -61,9 +63,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             st.error(f"Error processing {symbol}: {str(e)}")
         
         completed += 1
-        progress = completed / len(all_symbols)
+        progress = completed / len(symbols_list)
         progress_bar.progress(progress)
-        status_text.text(f"Processed {completed}/{len(all_symbols)} stocks...")
+        status_text.text(f"Processed {completed}/{len(symbols_list)} stocks...")
 
 # Convert to DataFrame and sort by market cap
 df = pd.DataFrame(stocks_data)
