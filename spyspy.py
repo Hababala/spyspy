@@ -1,37 +1,101 @@
 import streamlit as st
-from openbb import obb
+import yfinance as yf
 import pandas as pd
-import os
+import plotly.graph_objects as go
 
-# Set up OpenBB credentials
-obb.account.login(pat="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiTUJFNDhxaEtHYWlmdHJKVlN0eWZoVktxNmZlMGE5am41aGVnWkxDbiIsImV4cCI6MTc2Mjg5MzIyMH0.48URoFcEJ2dWF2SpWyj0B8MR-mBY8nc5lliHBuNR8bo")
+st.title("Stock Price Analysis")
 
-#obb.user.credentials.fmp_api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiQWpIZ2hsazVtcXk0VEV5V1FEUFRlakpqS3NYQjcxOXd5NzhyRjI2MiIsImV4cCI6MTc2Mjg4OTc4N30.4cKXMKxmZxc9CgWPIyAjF7T8nCyH0gThySmeACR-I1o"
-
-
-
-st.title("Apple Stock Price - Last Year")
+# Add a search box for stock symbols
+search_query = st.text_input("Search for a stock symbol:", "AAPL")
 
 @st.cache_data
-def get_apple_data():
-    """Fetch Apple stock data for the last year"""
+def get_stock_data(symbol):
+    """Fetch stock data for the last year"""
     try:
-        # Get AAPL data from OpenBB
-        aapl_data = obb.stocks.price.historical("AAPL", interval="1d", start="1 year ago")
-        return aapl_data
+        ticker = yf.Ticker(symbol)
+        data = ticker.history(period="1y")
+        return data
     except Exception as e:
         st.error(f"Error fetching data: {str(e)}")
         return pd.DataFrame()
 
-# Get the data
-df = get_apple_data()
-
-if not df.empty:
-    # Display the stock chart
-    st.line_chart(df['Close'])
+if search_query:
+    # Get the data
+    df = get_stock_data(search_query)
     
-    # Display the data table
-    st.write("Historical Data:")
-    st.dataframe(df)
-else:
-    st.write("Error loading Apple stock data.")
+    if not df.empty:
+        # Show current price and daily change
+        current_price = df['Close'].iloc[-1]
+        price_change = current_price - df['Open'].iloc[-1]
+        
+        st.metric(
+            label="Current Price",
+            value=f"${current_price:.2f}",
+            delta=f"${price_change:.2f}"
+        )
+        
+        # Create tabs for different views
+        tab1, tab2 = st.tabs(["Chart", "Data"])
+        
+        with tab1:
+            # Create interactive plot with Plotly
+            fig = go.Figure()
+            
+            # Add candlestick chart
+            fig.add_trace(go.Candlestick(
+                x=df.index,
+                open=df['Open'],
+                high=df['High'],
+                low=df['Low'],
+                close=df['Close'],
+                name='OHLC'
+            ))
+            
+            # Update layout
+            fig.update_layout(
+                title=f"{search_query} Stock Price - Last Year",
+                yaxis_title="Price ($)",
+                xaxis_title="Date",
+                template="plotly_dark"
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Add volume chart
+            volume_fig = go.Figure()
+            volume_fig.add_trace(go.Bar(
+                x=df.index,
+                y=df['Volume'],
+                name='Volume'
+            ))
+            
+            volume_fig.update_layout(
+                title="Trading Volume",
+                yaxis_title="Volume",
+                xaxis_title="Date",
+                template="plotly_dark"
+            )
+            
+            st.plotly_chart(volume_fig, use_container_width=True)
+        
+        with tab2:
+            st.write("Historical Data:")
+            st.dataframe(df)
+            
+            # Add basic statistics
+            st.subheader("Summary Statistics")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write("Price Statistics")
+                st.write(f"Average Price: ${df['Close'].mean():.2f}")
+                st.write(f"Highest Price: ${df['High'].max():.2f}")
+                st.write(f"Lowest Price: ${df['Low'].min():.2f}")
+            
+            with col2:
+                st.write("Volume Statistics")
+                st.write(f"Average Volume: {df['Volume'].mean():,.0f}")
+                st.write(f"Max Volume: {df['Volume'].max():,.0f}")
+                st.write(f"Min Volume: {df['Volume'].min():,.0f}")
+    else:
+        st.write(f"Error loading data for {search_query}")
