@@ -5,38 +5,78 @@ from bs4 import BeautifulSoup
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 import time
+import urllib.parse
 
 # Cache the company descriptions
 @st.cache_data(ttl=24*3600)  # Cache for 24 hours
 def get_company_description(ticker):
     """Fetch company description from SEC filings"""
     try:
-        # Search for the company's filings
-        search_url = f"https://www.sec.gov/cgi-bin/browse-edgar?company={ticker}&owner=exclude&action=getcompany"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        response = requests.get(search_url, headers=headers)
+        # Add proper headers to avoid being blocked
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
+        }
+
+        # Construct the search URL properly
+        base_url = "https://www.sec.gov"
+        search_url = f"{base_url}/cgi-bin/browse-edgar"
+        params = {
+            'CIK': ticker,
+            'owner': 'exclude',
+            'action': 'getcompany',
+            'type': '10-K'
+        }
+        
+        # Make the initial request
+        response = requests.get(search_url, params=params, headers=headers)
+        if response.status_code != 200:
+            st.warning(f"Failed to fetch data for {ticker}: Status {response.status_code}")
+            return None
+            
         soup = BeautifulSoup(response.text, 'html.parser')
 
         # Find the link to the most recent 10-K filing
-        filings = soup.find_all('a', href=True)
-        filing_url = None
-        for filing in filings:
-            if '10-K' in filing.text:
-                filing_url = "https://www.sec.gov" + filing['href']
-                break
-        
-        if not filing_url:
+        filing_links = soup.find_all('a', {'id': 'interactiveDataBtn'})
+        if not filing_links:
+            st.warning(f"No 10-K filings found for {ticker}")
             return None
+
+        # Get the first (most recent) 10-K filing URL
+        filing_url = urllib.parse.urljoin(base_url, filing_links[0]['href'])
+        
+        # Add a delay to respect rate limits
+        time.sleep(0.1)
 
         # Fetch the 10-K filing
         filing_response = requests.get(filing_url, headers=headers)
+        if filing_response.status_code != 200:
+            st.warning(f"Failed to fetch 10-K for {ticker}: Status {filing_response.status_code}")
+            return None
+            
         filing_soup = BeautifulSoup(filing_response.text, 'html.parser')
 
-        # Extract the company description
-        description_section = filing_soup.find(text="Business").find_next('p')
-        if description_section:
-            return description_section.text.strip()
-        return None
+        # Try different methods to find the business description
+        description = None
+        
+        # Method 1: Look for "Business" section
+        business_section = filing_soup.find('span', string='Business')
+        if business_section:
+            description = business_section.find_next('p')
+            
+        # Method 2: Look for "Item 1. Business" section
+        if not description:
+            business_section = filing_soup.find('span', string='Item 1. Business')
+            if business_section:
+                description = business_section.find_next('p')
+
+        if description:
+            return description.text.strip()
+        else:
+            st.warning(f"Could not find business description for {ticker}")
+            return None
 
     except Exception as e:
         st.error(f"Error fetching description for {ticker}: {str(e)}")
