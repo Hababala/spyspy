@@ -3,8 +3,6 @@ import yfinance as yf
 import pandas as pd
 from openbb import obb
 import time
-import json
-import plotly.graph_objects as go
 
 # Initialize OpenBB
 obb.account.login(pat="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiQWpIZ2hsazVtcXk0VEV5V1FEUFRlakpqS3NYQjcxOXd5NzhyRjI2MiIsImV4cCI6MTc2Mjg4OTc4N30.4cKXMKxmZxc9CgWPIyAjF7T8nCyH0gThySmeACR-I1o")
@@ -35,11 +33,11 @@ def load_all_companies():
                     all_companies[row.symbol] = {
                         'ticker': row.symbol,
                         'name': info.get('longName', row.name),
-                        'description': summary,  # Use shortened description
+                        'description': summary,
                         'sector': info.get('sector', 'N/A'),
                         'industry': info.get('industry', 'N/A'),
                         'market_cap': info.get('marketCap', 0),
-                        'full_description': description  # Keep full description for detailed view
+                        'full_description': description
                     }
             except Exception as e:
                 continue
@@ -78,8 +76,8 @@ with col2:
 sectors = list(set(info['sector'] for info in st.session_state.all_companies.values() if info['sector'] != 'N/A'))
 selected_sector = st.selectbox("Filter by sector:", ["All"] + sorted(sectors))
 
+# Display results
 if keywords:
-    # Filter companies
     matching_companies = {}
     for ticker, info in st.session_state.all_companies.items():
         if info['description'] and all(k.lower() in info['description'].lower() for k in keywords):
@@ -87,7 +85,6 @@ if keywords:
                 if info['market_cap'] >= min_market_cap * 1_000_000:
                     matching_companies[ticker] = info
     
-    # Display results
     if matching_companies:
         st.success(f"Found {len(matching_companies)} matching companies")
         
@@ -98,7 +95,7 @@ if keywords:
             reverse=True
         ))
         
-        # Create a DataFrame for better display
+        # Create display DataFrame
         display_data = []
         for ticker, info in sorted_companies.items():
             display_data.append({
@@ -121,85 +118,23 @@ if keywords:
             },
             use_container_width=True
         )
-        
-        # Company selection for detailed view
-        selected_ticker = st.selectbox(
-            "Select a company for detailed view:",
-            options=list(sorted_companies.keys()),
-            format_func=lambda x: f"{x} - {sorted_companies[x]['name']} (${sorted_companies[x]['market_cap']:,})"
-        )
-        
-        if selected_ticker:
-            company_info = sorted_companies[selected_ticker]
-            
-            # Display detailed company view
-            st.subheader(f"{selected_ticker} - {company_info['name']}")
-            
-            # Company details in columns
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write("**Sector:**", company_info['sector'])
-                st.write("**Industry:**", company_info['industry'])
-                st.write("**Market Cap:**", f"${company_info['market_cap']:,}")
-            
-            with col2:
-                # Add stock price metrics
-                try:
-                    stock = yf.Ticker(selected_ticker)
-                    current_data = stock.history(period="1d")
-                    if not current_data.empty:
-                        current_price = current_data['Close'].iloc[-1]
-                        open_price = current_data['Open'].iloc[0]
-                        st.metric(
-                            label="Current Price",
-                            value=f"${current_price:.2f}",
-                            delta=f"{(current_price - open_price):.2f}"
-                        )
-                except Exception as e:
-                    st.error(f"Error fetching current price: {str(e)}")
-            
-            # Full company description
-            st.subheader("Business Description")
-            st.write(company_info['full_description'])
-            
-            # Stock price chart
-            st.subheader("Stock Price (1 Year)")
-            try:
-                hist = stock.history(period="1y")
-                if not hist.empty:
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(
-                        x=hist.index,
-                        y=hist['Close'],
-                        name='Close Price',
-                        line=dict(color='blue', width=2)
-                    ))
-                    fig.update_layout(
-                        title=f"{selected_ticker} Price History",
-                        yaxis_title="Price ($)",
-                        xaxis_title="Date",
-                        showlegend=True,
-                        hovermode='x unified'
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-            except Exception as e:
-                st.error(f"Error creating price chart: {str(e)}")
-            
-            # Add download button for company info
-            company_data = {
-                'ticker': selected_ticker,
-                'name': company_info['name'],
-                'description': company_info['full_description'],
-                'sector': company_info['sector'],
-                'industry': company_info['industry'],
-                'market_cap': company_info['market_cap']
-            }
-            
-            st.download_button(
-                label="Download Company Info",
-                data=json.dumps(company_data, indent=2),
-                file_name=f"{selected_ticker}_info.json",
-                mime="application/json"
-            )
     else:
         st.warning("No companies found matching all keywords")
+
+# Add helpful information
+with st.sidebar:
+    st.subheader("Search Tips")
+    st.write("""
+    - Enter multiple keywords separated by commas
+    - All keywords must be present in the description
+    - Filter by sector to narrow results
+    - Companies are sorted by market cap
+    """)
+    
+    st.subheader("Example Keywords")
+    st.write("""
+    - technology, cloud, software
+    - healthcare, medical, diagnostic
+    - retail, e-commerce
+    - renewable, energy
+    """)
