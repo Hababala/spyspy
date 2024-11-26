@@ -2,97 +2,120 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import json
+from concurrent.futures import ThreadPoolExecutor
 import time
 
-# Load S&P 500 companies (you can expand this list)
 @st.cache_data
-def load_company_list():
-    """Load list of companies and their tickers"""
+def load_all_tickers():
+    """Load all US listed companies"""
     try:
-        # You can expand this to include more companies
-        sp500_url = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv"
-        df = pd.read_csv(sp500_url)
-        return dict(zip(df['Symbol'], df['Name']))
-    except:
-        # Fallback to a smaller list for testing
-        return {
-            'AAPL': 'Apple Inc.',
-            'MSFT': 'Microsoft Corporation',
-            'GOOGL': 'Alphabet Inc.',
-            'AMZN': 'Amazon.com Inc.',
-            'META': 'Meta Platforms Inc.',
-            'NVDA': 'NVIDIA Corporation',
-            'TSLA': 'Tesla Inc.',
-            'EXAS': 'Exact Sciences Corporation'
-        }
+        # NASDAQ stocks
+        nasdaq = pd.read_csv('https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqtraded.txt', sep='|')
+        nasdaq_tickers = nasdaq[nasdaq['Test Issue'] == 'N']['Symbol'].tolist()
+        
+        # NYSE stocks (alternative source)
+        nyse_url = "https://www.nyse.com/api/quotes/filter"
+        nyse = pd.read_json(nyse_url)
+        nyse_tickers = nyse['symbolTicker'].tolist()
+        
+        # Combine and clean tickers
+        all_tickers = list(set(nasdaq_tickers + nyse_tickers))
+        # Remove warrants, preferred stocks, etc.
+        clean_tickers = [t for t in all_tickers if not any(x in t for x in ['-', '^', '.', '$'])]
+        
+        return clean_tickers
+        
+    except Exception as e:
+        st.error(f"Error loading tickers: {str(e)}")
+        # Fallback to a smaller list from Yahoo Finance
+        return pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')[0]['Symbol'].tolist()
 
-@st.cache_data(ttl=24*3600)  # Cache for 24 hours
-def get_all_company_descriptions():
-    """Fetch and cache all company descriptions"""
-    companies = load_company_list()
-    descriptions = {}
-    
-    for ticker in companies.keys():
-        try:
-            company = yf.Ticker(ticker)
-            info = company.info
-            if 'longBusinessSummary' in info:
-                descriptions[ticker] = {
-                    'name': companies[ticker],
-                    'description': info['longBusinessSummary'],
-                    'sector': info.get('sector', 'N/A'),
-                    'industry': info.get('industry', 'N/A'),
-                    'website': info.get('website', 'N/A'),
-                    'market_cap': info.get('marketCap', 0)
-                }
-        except Exception as e:
-            st.error(f"Error fetching data for {ticker}: {str(e)}")
-    
-    return descriptions
+@st.cache_data(ttl=24*3600)
+def get_company_info(ticker):
+    """Get company info for a single ticker"""
+    try:
+        company = yf.Ticker(ticker)
+        info = company.info
+        if 'longBusinessSummary' in info:
+            return {
+                'ticker': ticker,
+                'name': info.get('longName', 'N/A'),
+                'description': info['longBusinessSummary'],
+                'sector': info.get('sector', 'N/A'),
+                'industry': info.get('industry', 'N/A'),
+                'market_cap': info.get('marketCap', 0),
+                'website': info.get('website', 'N/A')
+            }
+    except Exception as e:
+        return None
 
-def filter_companies_by_keywords(descriptions, keywords):
-    """Filter companies based on keywords"""
-    matching_companies = {}
-    
-    for ticker, info in descriptions.items():
-        description = info['description'].lower()
-        if all(keyword.lower() in description for keyword in keywords):
-            matching_companies[ticker] = info
-    
-    return matching_companies
+def fetch_companies_batch(tickers, progress_bar=None):
+    """Fetch company info for a batch of tickers"""
+    companies = {}
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_ticker = {executor.submit(get_company_info, ticker): ticker for ticker in tickers}
+        for i, future in enumerate(future_to_ticker):
+            try:
+                result = future.result()
+                if result:
+                    companies[result['ticker']] = result
+                if progress_bar:
+                    progress_bar.progress((i + 1) / len(tickers))
+            except Exception as e:
+                continue
+    return companies
 
 # Streamlit UI
-st.title("Company Description Search")
+st.title("US Stock Market Company Search")
 
-# Initialize session state for descriptions
-if 'descriptions' not in st.session_state:
-    with st.spinner('Loading company descriptions...'):
-        st.session_state.descriptions = get_all_company_descriptions()
+# Initialize or load company data
+if 'all_companies' not in st.session_state:
+    st.session_state.all_companies = {}
+    
+    # Load tickers
+    tickers = load_all_tickers()
+    st.info(f"Loading data for {len(tickers)} companies... This may take a while.")
+    
+    # Create progress bar
+    progress_bar = st.progress(0)
+    
+    # Fetch company data in batches
+    batch_size = 100
+    for i in range(0, len(tickers), batch_size):
+        batch = tickers[i:i+batch_size]
+        companies_batch = fetch_companies_batch(batch)
+        st.session_state.all_companies.update(companies_batch)
+        progress_bar.progress(min((i + batch_size) / len(tickers), 1.0))
+    
+    progress_bar.empty()
 
-# Keyword search
-keywords = st.text_input("Enter keywords (separated by commas):", "").split(',')
-keywords = [k.strip() for k in keywords if k.strip()]
+# Search interface
+col1, col2 = st.columns([2, 1])
+with col1:
+    keywords = st.text_input("Enter keywords (separated by commas):", "").split(',')
+    keywords = [k.strip() for k in keywords if k.strip()]
+
+with col2:
+    min_market_cap = st.number_input("Minimum Market Cap (USD Millions)", 0, 1000000, 0)
 
 # Sector filter
-sectors = list(set(info['sector'] for info in st.session_state.descriptions.values()))
+sectors = list(set(info['sector'] for info in st.session_state.all_companies.values() if info['sector'] != 'N/A'))
 selected_sector = st.selectbox("Filter by sector:", ["All"] + sorted(sectors))
 
 if keywords:
     # Filter companies
-    matching_companies = filter_companies_by_keywords(st.session_state.descriptions, keywords)
-    
-    # Apply sector filter
-    if selected_sector != "All":
-        matching_companies = {
-            ticker: info for ticker, info in matching_companies.items()
-            if info['sector'] == selected_sector
-        }
+    matching_companies = {}
+    for ticker, info in st.session_state.all_companies.items():
+        if info['description'] and all(k.lower() in info['description'].lower() for k in keywords):
+            if selected_sector == "All" or info['sector'] == selected_sector:
+                if info['market_cap'] >= min_market_cap * 1_000_000:  # Convert to millions
+                    matching_companies[ticker] = info
     
     # Display results
     if matching_companies:
         st.success(f"Found {len(matching_companies)} matching companies")
         
-        # Sort companies by market cap
+        # Sort by market cap
         sorted_companies = dict(sorted(
             matching_companies.items(),
             key=lambda x: x[1]['market_cap'],
@@ -101,9 +124,9 @@ if keywords:
         
         # Company selection
         selected_ticker = st.selectbox(
-            "Select a company to view details:",
+            "Select a company:",
             options=list(sorted_companies.keys()),
-            format_func=lambda x: f"{x} - {sorted_companies[x]['name']}"
+            format_func=lambda x: f"{x} - {sorted_companies[x]['name']} (${sorted_companies[x]['market_cap']:,})"
         )
         
         if selected_ticker:
@@ -118,43 +141,33 @@ if keywords:
                 st.write("**Industry:**", company_info['industry'])
             with col2:
                 st.write("**Website:**", company_info['website'])
-                st.write("**Market Cap:**", f"${company_info['market_cap']:,}")
+                st.write("**Market Cap:** $", f"{company_info['market_cap']:,}")
             
             st.subheader("Business Description")
             st.write(company_info['description'])
             
-            # Stock price chart
+            # Stock chart
             st.subheader("Stock Price (1 Year)")
             stock = yf.Ticker(selected_ticker)
             hist = stock.history(period="1y")
             st.line_chart(hist.Close)
-            
-            # Download button
-            if st.button("Download Company Info"):
-                company_data = json.dumps(company_info, indent=2)
-                st.download_button(
-                    label="Download JSON",
-                    data=company_data,
-                    file_name=f"{selected_ticker}_info.json",
-                    mime="application/json"
-                )
     else:
         st.warning("No companies found matching all keywords")
 
-# Add helpful information
+# Sidebar with tips
 with st.sidebar:
     st.subheader("Search Tips")
     st.write("""
     - Enter multiple keywords separated by commas
-    - All keywords must be present in the description
-    - Filter by sector to narrow results
-    - Companies are sorted by market cap
+    - Filter by sector and market cap
+    - Results are sorted by market cap
+    - Data is cached for 24 hours
     """)
     
-    st.subheader("Example Keywords")
+    st.subheader("Example Searches")
     st.write("""
-    - technology, cloud, software
-    - healthcare, medical, diagnostic
-    - retail, e-commerce
-    - renewable, energy
+    - biotech, cancer
+    - cloud, software
+    - electric vehicles
+    - renewable energy
     """)
