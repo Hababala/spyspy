@@ -1,21 +1,24 @@
 import streamlit as st
 import pandas as pd
 import requests
+import time
 
 st.title("US Listed Companies")
 
 @st.cache_data
 def fetch_us_companies():
     """Fetch all US listed companies using a different API"""
-    # Example using a different API endpoint
     url = "https://www.sec.gov/files/company_tickers.json"
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'User-Agent': 'YourAppName/1.0 (Contact: your-email@example.com)',
         'Accept-Encoding': 'gzip, deflate',
         'Host': 'www.sec.gov'
     }
     
     try:
+        # Add a delay to avoid rate limiting
+        time.sleep(1)
+        
         response = requests.get(url, headers=headers)
         
         if response.status_code != 200:
