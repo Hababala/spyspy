@@ -1,140 +1,92 @@
 import streamlit as st
+import plotly.graph_objects as go
 import yfinance as yf
 import pandas as pd
-import requests
-import time
+from openbb import obb
 
+# Initialize OpenBB
+obb.account.login(pat="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiQWpIZ2hsazVtcXk0VEV5V1FEUFRlakpqS3NYQjcxOXd5NzhyRjI2MiIsImV4cCI6MTc2Mjg4OTc4N30.4cKXMKxmZxc9CgWPIyAjF7T8nCyH0gThySmeACR-I1o")
+
+st.title("US Stock Market Search")
+
+# Get all companies from OpenBB (cached)
 @st.cache_data
-def load_sec_companies():
-    """Load all companies from SEC API"""
-    try:
-        # SEC Company Tickers API endpoint
-        url = "https://www.sec.gov/files/company_tickers.json"
-        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
-        companies_dict = response.json()
+def get_companies():
+    return obb.equity.search("", provider="sec").to_df()
+
+# Load companies
+all_companies = get_companies()
+symbols_list = all_companies['symbol'].tolist()
+
+# Add search box
+search_query = st.text_input("Search for a symbol:", "")
+
+if search_query:
+    # Filter symbols (show max 10 results)
+    filtered_symbols = [s for s in symbols_list if search_query.upper() in s.upper()][:10]
+    
+    if filtered_symbols:
+        col1, col2 = st.columns([1, 2])
         
-        # Convert to DataFrame
-        companies_df = pd.DataFrame.from_dict(companies_dict, orient='index')
-        companies_df['ticker'] = companies_df['ticker'].str.strip()
+        with col1:
+            selected_symbol = st.radio("Select a symbol:", filtered_symbols)
+            st.session_state.selected_symbol = selected_symbol
         
-        # Initialize dictionary to store company info
-        all_companies = {}
+        with col2:
+            if selected_symbol:
+                ticker = yf.Ticker(selected_symbol)
+                current_data = ticker.history(period="1d")
+                
+                if not current_data.empty:
+                    current_price = current_data['Close'].iloc[-1]
+                    st.metric(
+                        label="Current Price",
+                        value=f"${current_price:.2f}",
+                        delta=f"{(current_price - current_data['Open'].iloc[0]):.2f}"
+                    )
         
-        # Create progress bar
-        progress_bar = st.progress(0)
-        total_companies = len(companies_df)
-        
-        for i, row in companies_df.iterrows():
-            try:
-                company = yf.Ticker(row['ticker'])
-                info = company.info
-                if 'longBusinessSummary' in info:
-                    description = info['longBusinessSummary']
-                    summary = description.split('.')[0] + '.' if '.' in description else description[:200] + '...'
-                    
-                    all_companies[row['ticker']] = {
-                        'ticker': row['ticker'],
-                        'name': info.get('longName', row['title']),
-                        'description': summary,
-                        'sector': info.get('sector', 'N/A'),
-                        'industry': info.get('industry', 'N/A'),
-                        'market_cap': info.get('marketCap', 0),
-                        'full_description': description
-                    }
-            except Exception as e:
-                continue
+        if selected_symbol:
+            # Show detailed data in tabs
+            tab1, tab2 = st.tabs(["Price Data", "Chart"])
             
-            # Update progress
-            progress_bar.progress(min((i + 1) / total_companies, 1.0))
-            time.sleep(0.1)  # Rate limiting
+            with tab1:
+                st.write("Recent Price Data:")
+                st.write(ticker.history(period="5d"))
+            
+            with tab2:
+                hist_data = ticker.history(period="ytd")
+                fig = go.Figure(data=go.Scatter(x=hist_data.index, y=hist_data['Close']))
+                fig.update_layout(
+                    title=f"{selected_symbol} YTD Performance",
+                    yaxis_title="Price",
+                    xaxis_title="Date"
+                )
+                st.plotly_chart(fig)
+    else:
+        st.write("No matching symbols found.")
+
+# Add company info if a symbol is selected
+if 'selected_symbol' in st.session_state:
+    st.markdown("---")
+    st.subheader("Company Information")
+    
+    try:
+        ticker = yf.Ticker(st.session_state.selected_symbol)
+        info = ticker.info
         
-        progress_bar.empty()
-        return all_companies
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("**Sector:**", info.get('sector', 'N/A'))
+            st.write("**Industry:**", info.get('industry', 'N/A'))
+            st.write("**Market Cap:**", f"${info.get('marketCap', 0):,}")
+        
+        with col2:
+            st.write("**52 Week High:**", f"${info.get('fiftyTwoWeekHigh', 0):.2f}")
+            st.write("**52 Week Low:**", f"${info.get('fiftyTwoWeekLow', 0):.2f}")
+            st.write("**Beta:**", f"{info.get('beta', 0):.2f}")
+        
+        st.write("**Business Summary:**")
+        st.write(info.get('longBusinessSummary', 'No description available.'))
         
     except Exception as e:
-        st.error(f"Error loading companies: {str(e)}")
-        return {}
-
-# Streamlit UI
-st.title("US Stock Market Company Search")
-
-# Initialize or load company data
-if 'all_companies' not in st.session_state:
-    st.info("Loading company data... This may take a while.")
-    st.session_state.all_companies = load_sec_companies()
-
-# Search interface
-col1, col2 = st.columns([2, 1])
-with col1:
-    keywords = st.text_input("Enter keywords (separated by commas):", "").split(',')
-    keywords = [k.strip() for k in keywords if k.strip()]
-
-with col2:
-    min_market_cap = st.number_input("Minimum Market Cap (USD Millions)", 0, 1000000, 0)
-
-# Sector filter
-sectors = list(set(info['sector'] for info in st.session_state.all_companies.values() if info['sector'] != 'N/A'))
-selected_sector = st.selectbox("Filter by sector:", ["All"] + sorted(sectors))
-
-# Display results
-if keywords:
-    matching_companies = {}
-    for ticker, info in st.session_state.all_companies.items():
-        if info['description'] and all(k.lower() in info['description'].lower() for k in keywords):
-            if selected_sector == "All" or info['sector'] == selected_sector:
-                if info['market_cap'] >= min_market_cap * 1_000_000:
-                    matching_companies[ticker] = info
-    
-    if matching_companies:
-        st.success(f"Found {len(matching_companies)} matching companies")
-        
-        # Sort by market cap
-        sorted_companies = dict(sorted(
-            matching_companies.items(),
-            key=lambda x: x[1]['market_cap'],
-            reverse=True
-        ))
-        
-        # Create display DataFrame
-        display_data = []
-        for ticker, info in sorted_companies.items():
-            display_data.append({
-                'Ticker': ticker,
-                'Company Name': info['name'],
-                'Description': info['description'],
-                'Sector': info['sector'],
-                'Market Cap ($M)': f"${info['market_cap']/1_000_000:,.0f}M"
-            })
-        
-        # Display as table
-        st.dataframe(
-            pd.DataFrame(display_data),
-            column_config={
-                'Ticker': st.column_config.TextColumn('Ticker', width='small'),
-                'Company Name': st.column_config.TextColumn('Company Name', width='medium'),
-                'Description': st.column_config.TextColumn('Description', width='large'),
-                'Sector': st.column_config.TextColumn('Sector', width='medium'),
-                'Market Cap ($M)': st.column_config.TextColumn('Market Cap', width='medium')
-            },
-            use_container_width=True
-        )
-    else:
-        st.warning("No companies found matching all keywords")
-
-# Add helpful information
-with st.sidebar:
-    st.subheader("Search Tips")
-    st.write("""
-    - Enter multiple keywords separated by commas
-    - All keywords must be present in the description
-    - Filter by sector to narrow results
-    - Companies are sorted by market cap
-    """)
-    
-    st.subheader("Example Keywords")
-    st.write("""
-    - technology, cloud, software
-    - healthcare, medical, diagnostic
-    - retail, e-commerce
-    - renewable, energy
-    """)
+        st.error(f"Error loading company information: {str(e)}")
