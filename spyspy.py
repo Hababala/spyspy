@@ -75,6 +75,7 @@ def fetch_cot_data():
                                       currency_df['NonComm_Positions_Short_All'].iloc[0]
                     }
             return cot_data
+        return {}
     except Exception as e:
         st.error(f"Error fetching COT data: {str(e)}")
         return {}
@@ -97,17 +98,28 @@ def calculate_z_score(series):
         return np.nan
     mean = series[-252:].mean()
     std = series[-252:].std()
+    if std == 0:
+        return np.nan
     return (series.iloc[-1] - mean) / std
 
 # Fetch all data
-currency_prices = {curr: fetch_currency_data(info['pair']) 
-                  for curr, info in currency_data.items()}
-cot_positions = fetch_cot_data()
+currency_prices = {}
+for curr, info in currency_data.items():
+    price_data = fetch_currency_data(info['pair'])
+    if not price_data.empty:
+        currency_prices[curr] = price_data
+
+# Fetch COT data
+try:
+    cot_positions = fetch_cot_data()
+except Exception as e:
+    st.error(f"Error fetching COT data: {str(e)}")
+    cot_positions = {}
 
 # Create combined DataFrame
 results = []
 for currency, info in currency_data.items():
-    price_data = currency_prices[currency]
+    price_data = currency_prices.get(currency, pd.Series())
     cot_data = cot_positions.get(currency, {})
     
     result = {
@@ -135,11 +147,16 @@ for currency, price_data in currency_prices.items():
         st.line_chart(price_data)
 
 # Display COT positioning charts
-st.subheader("COT Non-Commercial Positioning")
 if cot_positions:
+    st.subheader("COT Non-Commercial Positioning")
     cot_df = pd.DataFrame([{
         'Currency': curr,
         'Net Position': data['Net Position']
-    } for curr, data in cot_positions.items()])
+    } for curr, data in cot_positions.items() if 'Net Position' in data])
     
-    st.bar_chart(cot_df.set_index('Currency')['Net Position'])
+    if not cot_df.empty:
+        st.bar_chart(cot_df.set_index('Currency')['Net Position'])
+    else:
+        st.write("No COT positioning data available")
+else:
+    st.write("COT data could not be fetched")
