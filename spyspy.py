@@ -1,103 +1,89 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import concurrent.futures
+import numpy as np
+from datetime import datetime, timedelta
 
-st.title("1000 Largest US Stocks")
+st.title("Currency Exchange Rates and Deposit Rates")
+
+# Define currency pairs for DM and EM
+currency_pairs = {
+    "USD/EUR": "EURUSD=X",
+    "USD/JPY": "JPY=X",
+    "USD/GBP": "GBPUSD=X",
+    "USD/AUD": "AUDUSD=X",
+    "USD/CAD": "CADUSD=X",
+    "USD/CHF": "CHFUSD=X",
+    "USD/CNY": "CNY=X",
+    "USD/INR": "INR=X",
+    "USD/BRL": "BRL=X",
+    "USD/RUB": "RUB=X",
+    "USD/ZAR": "ZAR=X",
+    "USD/MXN": "MXN=X",
+    "USD/KRW": "KRW=X",
+    "USD/IDR": "IDR=X",
+    "USD/TRY": "TRY=X"
+}
+
+# Placeholder for deposit rates (mock data)
+deposit_rates = {
+    "USD": 0.25,
+    "EUR": -0.5,
+    "JPY": -0.1,
+    "GBP": 0.1,
+    "AUD": 0.1,
+    "CAD": 0.25,
+    "CHF": -0.75,
+    "CNY": 2.2,
+    "INR": 4.0,
+    "BRL": 2.0,
+    "RUB": 4.5,
+    "ZAR": 3.5,
+    "MXN": 4.0,
+    "KRW": 1.5,
+    "IDR": 3.5,
+    "TRY": 5.0
+}
 
 @st.cache_data
-def get_sp500_symbols():
-    """Get S&P 500 symbols"""
+def fetch_currency_data(symbol):
+    """Fetch historical data for a currency pair"""
     try:
-        sp500 = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')[0]
-        return sp500['Symbol'].tolist()
-    except:
-        return []
+        ticker = yf.Ticker(symbol)
+        data = ticker.history(period="3y")
+        return data['Close']
+    except Exception as e:
+        st.error(f"Error fetching data for {symbol}: {str(e)}")
+        return pd.Series()
 
 @st.cache_data
-def get_russell1000_symbols():
-    """Get Russell 1000 symbols"""
-    try:
-        russell = pd.read_html('https://en.wikipedia.org/wiki/Russell_1000_Index')[1]
-        return russell['Ticker'].tolist()
-    except:
-        return []
+def calculate_z_score(series):
+    """Calculate the 1-year Z-score for a series"""
+    if len(series) < 252:
+        return np.nan
+    mean = series[-252:].mean()
+    std = series[-252:].std()
+    return (series.iloc[-1] - mean) / std
 
-@st.cache_data
-def get_stock_info(symbol):
-    """Get stock information including market cap and description"""
-    try:
-        stock = yf.Ticker(symbol)
-        info = stock.info
-        return {
-            'Symbol': symbol,
-            'Name': info.get('longName', 'N/A'),
-            'Market Cap': info.get('marketCap', 0),
-            'Description': info.get('longBusinessSummary', 'N/A'),
-            'Sector': info.get('sector', 'N/A'),
-            'Industry': info.get('industry', 'N/A')
-        }
-    except:
-        return None
+# Fetch data for all currency pairs
+currency_data = {pair: fetch_currency_data(symbol) for pair, symbol in currency_pairs.items()}
 
-# Get symbols from indices
-symbols_list = list(set(get_sp500_symbols() + get_russell1000_symbols()))
+# Create a DataFrame for deposit rates and Z-scores
+deposit_rate_df = pd.DataFrame({
+    "Currency": list(deposit_rates.keys()),
+    "Deposit Rate": list(deposit_rates.values())
+})
 
-# Show progress
-progress_bar = st.progress(0)
-status_text = st.empty()
+# Calculate Z-scores for deposit rates
+deposit_rate_df['1Y Z-Score'] = deposit_rate_df['Deposit Rate'].apply(lambda x: calculate_z_score(pd.Series([x] * 252)))
 
-# Fetch data for all stocks in parallel
-stocks_data = []
-with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-    future_to_symbol = {executor.submit(get_stock_info, symbol): symbol for symbol in symbols_list}
-    completed = 0
-    
-    for future in concurrent.futures.as_completed(future_to_symbol):
-        symbol = future_to_symbol[future]
-        try:
-            data = future.result()
-            if data and data['Market Cap'] > 0:
-                stocks_data.append(data)
-        except Exception as e:
-            st.error(f"Error processing {symbol}: {str(e)}")
-        
-        completed += 1
-        progress = completed / len(symbols_list)
-        progress_bar.progress(progress)
-        status_text.text(f"Processed {completed}/{len(symbols_list)} stocks...")
+# Display currency data
+st.subheader("Currency Exchange Rates (Last 3 Years)")
+for pair, data in currency_data.items():
+    if not data.empty:
+        st.line_chart(data, height=200, use_container_width=True)
+        st.write(f"{pair} - Last Price: {data.iloc[-1]:.4f}")
 
-# Convert to DataFrame and sort by market cap
-df = pd.DataFrame(stocks_data)
-df = df.sort_values('Market Cap', ascending=False).head(1000)
-
-# Format market cap
-df['Market Cap'] = df['Market Cap'].apply(lambda x: f"${x/1e9:.2f}B")
-
-# Add search functionality
-search_query = st.text_input("Search companies by name, symbol, or description:", "")
-
-if search_query:
-    # Case-insensitive search across multiple columns
-    mask = (
-        df['Symbol'].str.contains(search_query, case=False, na=False) |
-        df['Name'].str.contains(search_query, case=False, na=False) |
-        df['Description'].str.contains(search_query, case=False, na=False) |
-        df['Sector'].str.contains(search_query, case=False, na=False) |
-        df['Industry'].str.contains(search_query, case=False, na=False)
-    )
-    filtered_df = df[mask]
-    st.write(f"Found {len(filtered_df)} matching companies")
-    st.dataframe(filtered_df)
-else:
-    st.write(f"Showing all {len(df)} companies")
-    st.dataframe(df)
-
-# Add download button
-csv = df.to_csv(index=False).encode('utf-8')
-st.download_button(
-    label="Download data as CSV",
-    data=csv,
-    file_name="largest_us_stocks.csv",
-    mime="text/csv"
-)
+# Display deposit rates and Z-scores
+st.subheader("Deposit Rates and 1-Year Z-Scores")
+st.dataframe(deposit_rate_df)
