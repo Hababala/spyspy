@@ -3,7 +3,7 @@ import pandas as pd
 import requests
 import numpy as np
 
-st.title("Economic Indicators Comparison (2024-2025)")
+st.title("Economic Indicators Comparison (2023-2025)")
 
 # Country codes and indicators
 countries = {
@@ -32,14 +32,14 @@ try:
             params = {
                 "format": "json",
                 "per_page": "100",
-                "date": "2024:2025"
+                "date": "2023:2025"
             }
             
             response = requests.get(url, params=params)
             json_data = response.json()
             
             # Create DataFrame with default NaN values
-            data_dict[country_code][indicator_code] = pd.DataFrame({'date': ['2024', '2025'], 'value': [np.nan, np.nan]})
+            data_dict[country_code][indicator_code] = pd.DataFrame({'date': ['2023', '2025'], 'value': [np.nan, np.nan]})
             
             # Update with actual values if available
             if len(json_data) > 1 and json_data[1]:
@@ -51,21 +51,21 @@ try:
     # Create comparison table
     comparison_data = []
     for country_code, country_name in countries.items():
-        row_2024 = {'Country': country_name, 'Year': 2024}
-        row_2025 = {'Country': country_name, 'Year': 2025}
-        row_delta = {'Country': f'{country_name} Δ', 'Year': '2025-2024'}
+        row_2023 = {'Country': country_name, 'Year': '2023 (Actual)'}
+        row_2025 = {'Country': country_name, 'Year': '2025 (Forecast)'}
+        row_delta = {'Country': f'{country_name} Δ', 'Year': '2025-2023'}
         
         for indicator_code, indicator_name in indicators.items():
             df = data_dict[country_code][indicator_code]
-            val_2024 = df[df['date'] == '2024']['value'].iloc[0] if not df[df['date'] == '2024'].empty else np.nan
+            val_2023 = df[df['date'] == '2023']['value'].iloc[0] if not df[df['date'] == '2023'].empty else np.nan
             val_2025 = df[df['date'] == '2025']['value'].iloc[0] if not df[df['date'] == '2025'].empty else np.nan
-            delta = val_2025 - val_2024 if (not np.isnan(val_2024) and not np.isnan(val_2025)) else np.nan
+            delta = val_2025 - val_2023 if (not np.isnan(val_2023) and not np.isnan(val_2025)) else np.nan
             
-            row_2024[indicator_name] = val_2024
+            row_2023[indicator_name] = val_2023
             row_2025[indicator_name] = val_2025
             row_delta[indicator_name] = delta
         
-        comparison_data.extend([row_2024, row_2025, row_delta])
+        comparison_data.extend([row_2023, row_2025, row_delta])
     
     # Create and style the DataFrame
     comparison_df = pd.DataFrame(comparison_data)
