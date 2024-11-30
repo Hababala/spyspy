@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import plotly.graph_objects as go
 import yfinance as yf  
@@ -11,6 +12,10 @@ st.title("US Budget Balance Forecast")
 # Initialize OpenBB authentication
 if 'openbb_authenticated' not in st.session_state:
     st.session_state.openbb_authenticated = False
+
+# Set OpenBB user directory to a writable location before importing OpenBB
+os.environ["OPENBB_USER_PATH"] = "/tmp/openbb_user"
+os.makedirs("/tmp/openbb_user", exist_ok=True)
 
 def init_openbb():
     try:
