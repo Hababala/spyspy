@@ -8,31 +8,11 @@ from openbb import obb
 
 st.title("US Budget Balance Forecast")
 
-# Initialize OpenBB authentication
-if 'openbb_authenticated' not in st.session_state:
-    st.session_state.openbb_authenticated = False
-
-def init_openbb():
-    try:
-        if 'OPENBB_API_KEY' in st.secrets:
-            api_key = st.secrets['OPENBB_API_KEY']
-        else:
-            # Use the hardcoded key as fallback
-            api_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiTUJFNDhxaEtHYWlmdHJKVlN0eWZoVktxNmZlMGE5am41aGVnWkxDbiIsImV4cCI6MTc2Mjg5MzIyMH0.48URoFcEJ2dWF2SpWyj0B8MR-mBY8nc5lliHBuNR8bo"
-        
-        obb.account.login(pat=api_key)
-        st.session_state.openbb_authenticated = True
-        return True
-    except Exception as e:
-        st.error(f"Failed to authenticate with OpenBB: {str(e)}")
-        return False
-
-# Try to authenticate
-if not st.session_state.openbb_authenticated:
-    if not init_openbb():
-        st.stop()
-
+# Initialize OpenBB with API key directly
 try:
+    api_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiTUJFNDhxaEtHYWlmdHJKVlN0eWZoVktxNmZlMGE5am41aGVnWkxDbiIsImV4cCI6MTc2Mjg5MzIyMH0.48URoFcEJ2dWF2SpWyj0B8MR-mBY8nc5lliHBuNR8bo"
+    obb.account.login(pat=api_key)
+    
     # Fetch US budget balance forecast
     budget_data = obb.economy.fiscal.balance(country="united states", forecast=True)
     
@@ -49,5 +29,5 @@ try:
         st.warning("No budget balance data available")
 
 except Exception as e:
-    st.error(f"Error fetching budget balance data: {str(e)}")
+    st.error(f"Error: {str(e)}")
 

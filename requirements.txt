@@ -1,5 +1,7 @@
-polars>=0.20.0
-streamlit>=1.30.0
-yfinance>=0.2.35
-plotly>=5.18.0
-openbb==4.3.4
+streamlit
+plotly
+yfinance
+numpy
+scipy
+pandas
+openbb
