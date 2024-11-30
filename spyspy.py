@@ -1,34 +1,41 @@
-import os
+import requests
 import streamlit as st
-import plotly.graph_objects as go
-import yfinance as yf  
-import numpy as np
-from scipy import stats
-import pandas as pd
-from openbb import obb
 
 st.title("US Budget Balance Forecast")
 
-# Initialize OpenBB with API key directly
+# Your EconDB API token
+api_token = "95f02e5d4dcd471ad575cd2ef8298d92b6d4d318"
+
+# Define the endpoint and parameters
+url = "https://api.econdb.com/v1/forecast/budget_balance"
+params = {
+    "country": "united states",
+    "forecast": True,
+    "api_token": api_token
+}
+
 try:
-    # Set up OpenBB credentials
-    obb.user.credentials.econdb_api_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiTUJFNDhxaEtHYWlmdHJKVlN0eWZoVktxNmZlMGE5am41aGVnWkxDbiIsImV4cCI6MTc2Mjg5MzIyMH0.48URoFcEJ2dWF2SpWyj0B8MR-mBY8nc5lliHBuNR8bo"
-    
-    # Then proceed with your data fetch
-    budget_data = obb.economy.fiscal.balance(country="united states", forecast=True)
-    
-    if not budget_data.empty:
+    # Make the request to the EconDB API
+    response = requests.get(url, params=params)
+    response.raise_for_status()  # Raise an error for bad responses
+
+    # Parse the JSON response
+    data = response.json()
+
+    # Check if data is available
+    if data and "data" in data:
+        budget_data = data["data"]
         st.dataframe(budget_data)
-        
+
         # Extract 2025 forecast if available
-        if 2025 in budget_data.index:
-            forecast_2025 = budget_data.loc[2025]['Budget Balance (% of GDP)']
-            st.metric("2025 Budget Balance Forecast (% of GDP)", f"{forecast_2025:.1f}%")
+        forecast_2025 = next((item for item in budget_data if item["year"] == 2025), None)
+        if forecast_2025:
+            st.metric("2025 Budget Balance Forecast (% of GDP)", f"{forecast_2025['value']:.1f}%")
         else:
             st.warning("2025 forecast not available in the data")
     else:
         st.warning("No budget balance data available")
 
-except Exception as e:
-    st.error(f"Error: {str(e)}")
+except requests.exceptions.RequestException as e:
+    st.error(f"Error fetching data from EconDB: {str(e)}")
 
