@@ -12,11 +12,22 @@ try:
     indicator = 'NGDP_RPCH'
     country = 'BRA'
     
-    # Construct URL
-    url = f"{base_url}/{indicator}.{country}"
+    # Construct URL with parameters
+    url = f"{base_url}/{indicator}.{country}?startPeriod=2023&endPeriod=2023"
+    
+    # Add headers to mimic a browser request
+    headers = {
+        'User-Agent': 'Mozilla/5.0',
+        'Accept': 'application/json'
+    }
     
     # Make request
-    response = requests.get(url)
+    response = requests.get(url, headers=headers)
+    
+    # Print response for debugging
+    st.write("Response status:", response.status_code)
+    st.write("Response content:", response.text[:200])  # First 200 chars
+    
     json_data = response.json()
     
     # Extract data
@@ -40,4 +51,5 @@ try:
 except Exception as e:
     st.error(f"Error fetching data: {str(e)}")
     st.write("URL attempted:", url)
+    st.write("Headers used:", headers)
 
