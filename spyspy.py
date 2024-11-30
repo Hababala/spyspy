@@ -8,14 +8,16 @@ api_token = "95f02e5d4dcd471ad575cd2ef8298d92b6d4d318"
 
 # Define the endpoint and parameters
 url = "https://www.econdb.com/api/series/DECPI"  # DE for Germany, CPI for Consumer Price Index
+headers = {
+    "Authorization": f"Token {api_token}"  # Try passing token in header
+}
 params = {
-    "api_token": api_token,
     "format": "json"
 }
 
 try:
     # Make the request to the EconDB API
-    response = requests.get(url, params=params)
+    response = requests.get(url, headers=headers, params=params)
     response.raise_for_status()  # Raise an error for bad responses
     
     # Print response for debugging
@@ -51,4 +53,7 @@ try:
 
 except requests.exceptions.RequestException as e:
     st.error(f"Error fetching data from EconDB: {str(e)}")
+    # Add more debug information
+    st.write("URL:", response.url)
+    st.write("Headers sent:", headers)
 
