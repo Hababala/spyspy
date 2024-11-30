@@ -1,13 +1,13 @@
 import streamlit as st
 import pandas as pd
 
-st.title("US GDP 2022-2023")
+st.title("US Budget Balance Time Series")
 
 # Your EconDB API token
 api_token = "95f02e5d4dcd471ad575cd2ef8298d92b6d4d318"
 
-# Define the ticker for US GDP (using RGDPUS instead of USGDP)
-ticker = 'RGDPUS'
+# Define the ticker for US Budget Balance
+ticker = 'USBB'  # Budget Balance ticker
 
 try:
     # Fetch the data using pandas
@@ -19,36 +19,40 @@ try:
     # Ensure the index is a DatetimeIndex
     df.index = pd.to_datetime(df.index)
 
-    # Display the entire DataFrame for debugging
-    st.subheader("Full GDP Data")
+    # Display the entire DataFrame
+    st.subheader("Full Budget Balance Data")
     st.dataframe(df)
 
-    # Filter for 2022-2023 data
-    gdp_recent = df[df.index.year.isin([2022, 2023])]
+    # Get the last 24 months of data
+    recent_data = df.last('24M')
     
-    if not gdp_recent.empty:
-        st.subheader("US GDP Data 2022-2023")
-        st.dataframe(gdp_recent)
+    if not recent_data.empty:
+        st.subheader("Recent Budget Balance Data (Last 24 Months)")
+        st.dataframe(recent_data)
         
         # Get the most recent value
-        latest = gdp_recent.iloc[-1]
+        latest = recent_data.iloc[-1]
         st.metric(
-            label=f"Latest GDP (Date: {latest.name.strftime('%Y-%m-%d')})", 
-            value=f"${latest['Value']:,.2f} Billion"
+            label=f"Latest Budget Balance (Date: {latest.name.strftime('%Y-%m-%d')})", 
+            value=f"${latest['Value']:,.2f} Billion",
+            delta=f"{latest['Value'] - recent_data.iloc[-2]['Value']:,.2f}B vs Previous"
         )
         
-        # Plot the data
-        st.line_chart(gdp_recent['Value'])
+        # Plot the time series
+        st.subheader("Budget Balance Trend")
+        fig_data = recent_data.copy()
+        st.line_chart(fig_data['Value'])
         
-        # Calculate year-over-year growth
-        if len(gdp_recent) > 4:  # Ensure we have enough data for YoY calculation
-            yoy_growth = ((latest['Value'] / gdp_recent.iloc[-5]['Value']) - 1) * 100
+        # Calculate year-over-year change
+        if len(recent_data) > 12:  # Ensure we have enough data for YoY calculation
+            yoy_change = latest['Value'] - recent_data.iloc[-13]['Value']
             st.metric(
-                label="Year-over-Year Growth",
-                value=f"{yoy_growth:.1f}%"
+                label="Year-over-Year Change",
+                value=f"${yoy_change:,.2f}B",
+                delta=f"{(yoy_change/abs(recent_data.iloc[-13]['Value'])*100):,.1f}%"
             )
     else:
-        st.warning("No GDP data available for 2022-2023")
+        st.warning("No recent Budget Balance data available")
 
 except Exception as e:
     st.error(f"Error fetching data from EconDB: {str(e)}")
