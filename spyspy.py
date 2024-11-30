@@ -2,61 +2,46 @@ import streamlit as st
 import requests
 import pandas as pd
 
-st.title("Brazil GDP Growth 2023")
+st.title("Brazil 2025 Forecasts")
 
 try:
-    # IMF API base URL and endpoint
-    url = "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/IFS/Q.BR.NGDP_R_PC_CP_A_PT.?startPeriod=2023&endPeriod=2023"
+    # Base URL for IMF WEO database
+    base_url = "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/WEO"
     
-    # Add headers
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        'Accept': 'application/json'
+    # Indicators we want
+    indicators = {
+        'NGDP_RPCH': 'Real GDP Growth',
+        'PCPIPCH': 'CPI Inflation'
     }
     
-    # Make request
-    response = requests.get(url, headers=headers)
+    data = {}
     
-    if response.status_code == 200:
-        json_data = response.json()
+    for indicator_code, indicator_name in indicators.items():
+        # Construct URL for each indicator
+        url = f"{base_url}/{indicator_code}/BRA?startPeriod=2025&endPeriod=2025"
         
-        # Debug: Print the structure of json_data
-        st.write("JSON Structure:", json_data.keys())
-        st.write("CompactData Structure:", json_data.get('CompactData', {}).keys())
-        st.write("DataSet Structure:", json_data.get('CompactData', {}).get('DataSet', {}).keys())
+        # Make request
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'Accept': 'application/json'
+        }
         
-        # Extract data with more careful handling
-        dataset = json_data.get('CompactData', {}).get('DataSet', {})
-        if 'Series' not in dataset:
-            st.error("No Series data found in response")
-            st.write("Full response:", json_data)
-            raise KeyError("No Series data available")
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            json_data = response.json()
+            value = float(json_data['CompactData']['DataSet']['Series']['Obs']['@value'])
+            data[indicator_name] = value
             
-        series = dataset['Series']
-        obs = series.get('Obs', [])
-        if not isinstance(obs, list):
-            obs = [obs]
-        
-        # Convert to DataFrame
-        df = pd.DataFrame(obs)
-        df.columns = ['date', 'value']
-        df['value'] = pd.to_numeric(df['value'])
-        
-        # Get the latest value
-        gdp_growth = df['value'].iloc[0]
-        
-        # Display result
-        st.metric(
-            label="Brazil Real GDP Growth 2023",
-            value=f"{gdp_growth:.1f}%"
-        )
-    else:
-        st.error(f"Failed to fetch data. Status code: {response.status_code}")
-        st.write("Response content:", response.text[:200])
+            # Display metric
+            st.metric(
+                label=f"Brazil {indicator_name} (2025)",
+                value=f"{value:.1f}%"
+            )
+        else:
+            st.error(f"Failed to fetch {indicator_name}")
 
 except Exception as e:
-    st.error(f"Error fetching data: {str(e)}")
+    st.error(f"Error: {str(e)}")
     st.write("URL attempted:", url)
-    if 'response' in locals():
-        st.write("Response content:", response.text[:500])
 
