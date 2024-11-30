@@ -7,15 +7,18 @@ from scipy import stats
 import pandas as pd
 from openbb import obb
 
+# Set OpenBB user directory to a writable location BEFORE importing OpenBB
+os.environ["OPENBB_USER_PATH"] = "/tmp/openbb_user"
+os.makedirs("/tmp/openbb_user", exist_ok=True)
+
+# Now import OpenBB
+from openbb import obb
+
 st.title("US Budget Balance Forecast")
 
 # Initialize OpenBB authentication
 if 'openbb_authenticated' not in st.session_state:
     st.session_state.openbb_authenticated = False
-
-# Set OpenBB user directory to a writable location before importing OpenBB
-os.environ["OPENBB_USER_PATH"] = "/tmp/openbb_user"
-os.makedirs("/tmp/openbb_user", exist_ok=True)
 
 def init_openbb():
     try:
