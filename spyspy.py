@@ -1,15 +1,24 @@
 import streamlit as st
+import os
 from openbb import obb
+import tempfile
 
-# Initialize OpenBB authentication
+st.title("US Budget Balance Forecast")
+
+# Initialize OpenBB authentication with temporary directory
 if 'openbb_authenticated' not in st.session_state:
     st.session_state.openbb_authenticated = False
 
 def init_openbb():
     try:
+        # Set up temporary directory for OpenBB
+        temp_dir = tempfile.mkdtemp()
+        os.environ['OPENBB_USER_DATA_DIR'] = temp_dir
+        
         # Use the same API key as in world.py
         api_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiTUJFNDhxaEtHYWlmdHJKVlN0eWZoVktxNmZlMGE5am41aGVnWkxDbiIsImV4cCI6MTc2Mjg5MzIyMH0.48URoFcEJ2dWF2SpWyj0B8MR-mBY8nc5lliHBuNR8bo"
         
+        # Initialize OpenBB
         obb.account.login(pat=api_key)
         st.session_state.openbb_authenticated = True
         return True
@@ -26,9 +35,7 @@ try:
     # Fetch US budget balance forecast
     budget_data = obb.economy.fiscal.balance(country="united states", forecast=True)
     
-    # Convert to DataFrame and display
     if not budget_data.empty:
-        st.title("US Budget Balance Forecast")
         st.dataframe(budget_data)
         
         # Extract 2025 forecast if available
