@@ -1,7 +1,8 @@
+python-3.11.0
 streamlit
 plotly
 yfinance
 numpy
 scipy
 pandas
-openbb
+openbb==3.2.5
