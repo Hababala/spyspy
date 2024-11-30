@@ -5,48 +5,55 @@ import numpy as np
 
 st.title("Economic Indicators Comparison (2023-2025)")
 
-# Country codes and indicators
+# Country codes and indicators (using IMF codes)
 countries = {
     'BRA': 'Brazil',
     'ZAF': 'South Africa',
     'KAZ': 'Kazakhstan'
 }
 
+# IMF indicator codes
 indicators = {
-    'FP.CPI.TOTL.ZG': 'CPI (%)',
-    'BN.CAB.XOKA.GD.ZS': 'Current Account (% of GDP)',
-    'GC.BAL.CASH.GD.ZS': 'Budget Balance (% of GDP)',
-    'NY.GDP.MKTP.KD.ZG': 'Real GDP Growth (%)'
+    'PCPIPCH': 'CPI (%)',
+    'BCA_NGDPD': 'Current Account (% of GDP)',
+    'GGR_NGDP': 'Budget Balance (% of GDP)',
+    'NGDP_RPCH': 'Real GDP Growth (%)'
 }
 
 try:
     # Initialize data storage
     data_dict = {}
     
+    # IMF API base URL
+    base_url = "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/WEO"
+    
     # Fetch data for each country and indicator
     for country_code in countries.keys():
         data_dict[country_code] = {}
         
         for indicator_code in indicators.keys():
-            url = f"http://api.worldbank.org/v2/country/{country_code}/indicator/{indicator_code}"
-            params = {
-                "format": "json",
-                "per_page": "100",
-                "date": "2023:2025"
-            }
-            
-            response = requests.get(url, params=params)
+            # IMF API request
+            url = f"{base_url}/{indicator_code}.{country_code}"
+            response = requests.get(url)
             json_data = response.json()
             
             # Create DataFrame with default NaN values
             data_dict[country_code][indicator_code] = pd.DataFrame({'date': ['2023', '2025'], 'value': [np.nan, np.nan]})
             
-            # Update with actual values if available
-            if len(json_data) > 1 and json_data[1]:
-                df = pd.DataFrame(json_data[1])
+            # Extract data from IMF response
+            try:
+                series = json_data['CompactData']['DataSet']['Series']
+                obs = series['Obs'] if isinstance(series['Obs'], list) else [series['Obs']]
+                
+                df = pd.DataFrame(obs)
+                df.columns = ['date', 'value']
+                df['value'] = pd.to_numeric(df['value'])
+                df = df[df['date'].isin(['2023', '2025'])]
+                
                 if not df.empty:
-                    df['value'] = pd.to_numeric(df['value'])
                     data_dict[country_code][indicator_code] = df
+            except (KeyError, TypeError):
+                continue
     
     # Create comparison table
     comparison_data = []
