@@ -5,7 +5,6 @@ import yfinance as yf
 import numpy as np
 from scipy import stats
 import pandas as pd
-from openbb import obb
 
 # Set OpenBB user directory to a writable location BEFORE importing OpenBB
 os.environ["OPENBB_USER_PATH"] = "/tmp/openbb_user"
