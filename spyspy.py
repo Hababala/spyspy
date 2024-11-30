@@ -1,61 +1,61 @@
 import streamlit as st
 import pandas as pd
+import requests
+from datetime import datetime
 
-st.title("US Budget Balance Time Series")
-
-# Your EconDB API token
-api_token = "95f02e5d4dcd471ad575cd2ef8298d92b6d4d318"
-
-# Define the ticker for US Budget Balance
-ticker = 'USBB'  # Budget Balance ticker
+st.title("Germany GDP Growth Rate (2020-2024)")
 
 try:
-    # Fetch the data using pandas
-    df = pd.read_csv(
-        f"https://www.econdb.com/api/series/{ticker}/?format=csv&token={api_token}", 
-        index_col='Date', parse_dates=True
+    # World Bank API endpoint for GDP growth
+    # NY.GDP.MKTP.KD.ZG is the indicator code for real GDP growth
+    url = "http://api.worldbank.org/v2/country/DEU/indicator/NY.GDP.MKTP.KD.ZG"
+    
+    # Parameters for the API request
+    params = {
+        "format": "json",
+        "per_page": "100",  # Get more data than needed to ensure we have our date range
+        "date": "2020:2024"  # Date range
+    }
+    
+    # Make the API request
+    response = requests.get(url, params=params)
+    response.raise_for_status()  # Raise an error for bad responses
+    
+    # Parse the JSON response
+    data = response.json()[1]  # World Bank returns metadata in [0] and data in [1]
+    
+    # Convert to DataFrame
+    df = pd.DataFrame(data)
+    df['date'] = pd.to_datetime(df['date'], format='%Y')
+    df['value'] = pd.to_numeric(df['value'])
+    df = df.sort_values('date')
+    
+    # Display the data
+    st.subheader("GDP Growth Rate Data")
+    display_df = df[['date', 'value']].copy()
+    display_df.columns = ['Year', 'Growth Rate (%)']
+    st.dataframe(display_df)
+    
+    # Get the most recent actual value (not null)
+    latest = df[df['value'].notna()].iloc[-1]
+    st.metric(
+        label=f"Latest GDP Growth Rate ({latest['date'].year})",
+        value=f"{latest['value']:.1f}%"
     )
     
-    # Ensure the index is a DatetimeIndex
-    df.index = pd.to_datetime(df.index)
-
-    # Display the entire DataFrame
-    st.subheader("Full Budget Balance Data")
-    st.dataframe(df)
-
-    # Get the last 24 months of data
-    recent_data = df.last('24M')
+    # Plot the time series
+    st.subheader("GDP Growth Rate Trend")
+    st.line_chart(df.set_index('date')['value'])
     
-    if not recent_data.empty:
-        st.subheader("Recent Budget Balance Data (Last 24 Months)")
-        st.dataframe(recent_data)
-        
-        # Get the most recent value
-        latest = recent_data.iloc[-1]
-        st.metric(
-            label=f"Latest Budget Balance (Date: {latest.name.strftime('%Y-%m-%d')})", 
-            value=f"${latest['Value']:,.2f} Billion",
-            delta=f"{latest['Value'] - recent_data.iloc[-2]['Value']:,.2f}B vs Previous"
-        )
-        
-        # Plot the time series
-        st.subheader("Budget Balance Trend")
-        fig_data = recent_data.copy()
-        st.line_chart(fig_data['Value'])
-        
-        # Calculate year-over-year change
-        if len(recent_data) > 12:  # Ensure we have enough data for YoY calculation
-            yoy_change = latest['Value'] - recent_data.iloc[-13]['Value']
-            st.metric(
-                label="Year-over-Year Change",
-                value=f"${yoy_change:,.2f}B",
-                delta=f"{(yoy_change/abs(recent_data.iloc[-13]['Value'])*100):,.1f}%"
-            )
-    else:
-        st.warning("No recent Budget Balance data available")
+    # Add some context
+    st.markdown("""
+    **Note:**
+    - Values after 2023 are projections
+    - Negative values indicate economic contraction
+    - Data source: World Bank
+    """)
 
 except Exception as e:
-    st.error(f"Error fetching data from EconDB: {str(e)}")
-    # Print the URL for debugging
-    st.write(f"URL attempted: https://www.econdb.com/api/series/{ticker}/?format=csv&token={api_token}")
+    st.error(f"Error fetching data from World Bank API: {str(e)}")
+    st.write("URL attempted:", url)
 
