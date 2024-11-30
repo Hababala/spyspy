@@ -20,9 +20,22 @@ try:
     if response.status_code == 200:
         json_data = response.json()
         
-        # Extract data
-        series = json_data['CompactData']['DataSet']['Series']
-        obs = series['Obs'] if isinstance(series['Obs'], list) else [series['Obs']]
+        # Debug: Print the structure of json_data
+        st.write("JSON Structure:", json_data.keys())
+        st.write("CompactData Structure:", json_data.get('CompactData', {}).keys())
+        st.write("DataSet Structure:", json_data.get('CompactData', {}).get('DataSet', {}).keys())
+        
+        # Extract data with more careful handling
+        dataset = json_data.get('CompactData', {}).get('DataSet', {})
+        if 'Series' not in dataset:
+            st.error("No Series data found in response")
+            st.write("Full response:", json_data)
+            raise KeyError("No Series data available")
+            
+        series = dataset['Series']
+        obs = series.get('Obs', [])
+        if not isinstance(obs, list):
+            obs = [obs]
         
         # Convert to DataFrame
         df = pd.DataFrame(obs)
@@ -44,4 +57,6 @@ try:
 except Exception as e:
     st.error(f"Error fetching data: {str(e)}")
     st.write("URL attempted:", url)
+    if 'response' in locals():
+        st.write("Response content:", response.text[:500])
 
