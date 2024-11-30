@@ -1,53 +1,28 @@
 import streamlit as st
-import requests
-import pandas as pd
+from openbb import obb
 
-st.title("South Africa 2025 GDP Growth Forecast")
+st.title("US Real GDP Growth 2023")
 
 try:
-    # World Bank API endpoint for GDP growth
-    url = "http://api.worldbank.org/v2/country/ZAF/indicator/NY.GDP.MKTP.KD.ZG"
+    # Get GDP data from OpenBB
+    gdp_data = obb.economy.gdp(country="united-states", start_date="2023-01-01", end_date="2023-12-31").to_df()
     
-    # Parameters for the API request
-    params = {
-        "format": "json",
-        "per_page": "100",  # Get more data than needed to ensure we have our date range
-        "date": "2025"  # Specific year
-    }
-    
-    # Make the API request
-    response = requests.get(url, params=params)
-    response.raise_for_status()  # Raise an error for bad responses
-    
-    # Parse the JSON response
-    json_data = response.json()
-    
-    # Check if data is available
-    if len(json_data) > 1 and json_data[1]:
-        data = json_data[1]
+    # Display the data
+    if not gdp_data.empty:
+        # Get the most recent value for 2023
+        gdp_2023 = gdp_data['value'].iloc[-1]
         
-        # Convert to DataFrame
-        df = pd.DataFrame(data)
+        # Display the metric
+        st.metric(
+            label="US Real GDP Growth (2023)",
+            value=f"{gdp_2023:.1f}%"
+        )
         
-        # Check if 'date' and 'value' columns exist
-        if 'date' in df.columns and 'value' in df.columns:
-            df['date'] = pd.to_datetime(df['date'], format='%Y')
-            df['value'] = pd.to_numeric(df['value'])
-            df = df.sort_values('date')
-            
-            # Get the 2025 value
-            gdp_2025 = df[df['date'].dt.year == 2025]['value'].iloc[0]
-            
-            # Display result
-            st.metric(
-                label="South Africa Real GDP Growth (2025)",
-                value=f"{gdp_2025:.1f}%"
-            )
-        else:
-            st.error("The expected data fields are missing in the response.")
+        # Show the full data table
+        st.write("GDP Data:")
+        st.dataframe(gdp_data)
     else:
-        st.error("No data available for the specified year.")
+        st.error("No GDP data available for 2023")
 
 except Exception as e:
-    st.error(f"Error fetching data from World Bank API: {str(e)}")
-    st.write("URL attempted:", url)
+    st.error(f"Error fetching GDP data: {str(e)}")
