@@ -13,9 +13,12 @@ try:
     # Fetch the data using pandas
     df = pd.read_csv(
         f"https://www.econdb.com/api/series/{ticker}/?format=csv&token={api_token}", 
-        index_col='Date', parse_dates=['Date']
+        index_col='Date', parse_dates=True
     )
     
+    # Ensure the index is a DatetimeIndex
+    df.index = pd.to_datetime(df.index)
+
     # Filter for 2023 data
     cpi_2023 = df[df.index.year == 2023]
     
