@@ -1,162 +1,45 @@
 import streamlit as st
-import yfinance as yf
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-import requests
-from io import StringIO
+from openbb import obb
 
-st.title("Currency Exchange Rates, Deposit Rates, and COT Positioning")
+# Initialize OpenBB authentication
+if 'openbb_authenticated' not in st.session_state:
+    st.session_state.openbb_authenticated = False
 
-# Define currency pairs and their corresponding CFTC codes
-currency_data = {
-    "EUR": {
-        "pair": "EURUSD=X",
-        "cftc_code": "099741", # Euro FX
-        "deposit_rate": -0.5
-    },
-    "JPY": {
-        "pair": "JPY=X",
-        "cftc_code": "097741", # Japanese Yen
-        "deposit_rate": -0.1
-    },
-    "GBP": {
-        "pair": "GBPUSD=X",
-        "cftc_code": "096742", # British Pound
-        "deposit_rate": 0.1
-    },
-    "AUD": {
-        "pair": "AUDUSD=X",
-        "cftc_code": "232741", # Australian Dollar
-        "deposit_rate": 0.1
-    },
-    "CAD": {
-        "pair": "CADUSD=X",
-        "cftc_code": "090741", # Canadian Dollar
-        "deposit_rate": 0.25
-    },
-    "CHF": {
-        "pair": "CHFUSD=X",
-        "cftc_code": "092741", # Swiss Franc
-        "deposit_rate": -0.75
-    },
-    "MXN": {
-        "pair": "MXN=X",
-        "cftc_code": "095741", # Mexican Peso
-        "deposit_rate": 4.0
-    }
-}
-
-@st.cache_data
-def fetch_cot_data():
-    """Fetch latest COT data from CFTC"""
+def init_openbb():
     try:
-        # Get the most recent Friday's date
-        today = datetime.now()
-        friday = today - timedelta(days=(today.weekday() + 3) % 7)
+        # Use the same API key as in world.py
+        api_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiTUJFNDhxaEtHYWlmdHJKVlN0eWZoVktxNmZlMGE5am41aGVnWkxDbiIsImV4cCI6MTc2Mjg5MzIyMH0.48URoFcEJ2dWF2SpWyj0B8MR-mBY8nc5lliHBuNR8bo"
         
-        # CFTC report URL
-        url = f"https://www.cftc.gov/dea/newcot/f_txt/{friday.strftime('%Y%m%d')}.txt"
-        
-        response = requests.get(url)
-        if response.status_code == 200:
-            # Parse the fixed-width file
-            df = pd.read_csv(StringIO(response.text), sep=',')
-            
-            # Filter for currency futures and get non-commercial positions
-            cot_data = {}
-            for currency, info in currency_data.items():
-                currency_df = df[df['Market_and_Exchange_Names'].str.contains(info['cftc_code'], na=False)]
-                if not currency_df.empty:
-                    cot_data[currency] = {
-                        'Non-Commercial Long': currency_df['NonComm_Positions_Long_All'].iloc[0],
-                        'Non-Commercial Short': currency_df['NonComm_Positions_Short_All'].iloc[0],
-                        'Net Position': currency_df['NonComm_Positions_Long_All'].iloc[0] - 
-                                      currency_df['NonComm_Positions_Short_All'].iloc[0]
-                    }
-            return cot_data
-        return {}
+        obb.account.login(pat=api_key)
+        st.session_state.openbb_authenticated = True
+        return True
     except Exception as e:
-        st.error(f"Error fetching COT data: {str(e)}")
-        return {}
+        st.error(f"Failed to authenticate with OpenBB: {str(e)}")
+        return False
 
-@st.cache_data
-def fetch_currency_data(symbol):
-    """Fetch historical data for a currency pair"""
-    try:
-        ticker = yf.Ticker(symbol)
-        data = ticker.history(period="3y")
-        return data['Close']
-    except Exception as e:
-        st.error(f"Error fetching data for {symbol}: {str(e)}")
-        return pd.Series()
+# Try to authenticate
+if not st.session_state.openbb_authenticated:
+    if not init_openbb():
+        st.stop()
 
-@st.cache_data
-def calculate_z_score(series):
-    """Calculate the 1-year Z-score for a series"""
-    if len(series) < 252:
-        return np.nan
-    mean = series[-252:].mean()
-    std = series[-252:].std()
-    if std == 0:
-        return np.nan
-    return (series.iloc[-1] - mean) / std
-
-# Fetch all data
-currency_prices = {}
-for curr, info in currency_data.items():
-    price_data = fetch_currency_data(info['pair'])
-    if not price_data.empty:
-        currency_prices[curr] = price_data
-
-# Fetch COT data
 try:
-    cot_positions = fetch_cot_data()
-except Exception as e:
-    st.error(f"Error fetching COT data: {str(e)}")
-    cot_positions = {}
-
-# Create combined DataFrame
-results = []
-for currency, info in currency_data.items():
-    price_data = currency_prices.get(currency, pd.Series())
-    cot_data = cot_positions.get(currency, {})
+    # Fetch US budget balance forecast
+    budget_data = obb.economy.fiscal.balance(country="united states", forecast=True)
     
-    result = {
-        'Currency': currency,
-        'Current Rate': price_data.iloc[-1] if not price_data.empty else np.nan,
-        'Deposit Rate': info['deposit_rate'],
-        'Deposit Rate Z-Score': calculate_z_score(pd.Series([info['deposit_rate']] * 252)),
-        'Non-Comm Long': cot_data.get('Non-Commercial Long', np.nan),
-        'Non-Comm Short': cot_data.get('Non-Commercial Short', np.nan),
-        'Net Position': cot_data.get('Net Position', np.nan)
-    }
-    results.append(result)
-
-df_results = pd.DataFrame(results)
-
-# Display results
-st.subheader("Currency Overview")
-st.dataframe(df_results)
-
-# Display currency charts
-st.subheader("Currency Exchange Rates (Last 3 Years)")
-for currency, price_data in currency_prices.items():
-    if not price_data.empty:
-        st.write(f"{currency}/USD Exchange Rate")
-        st.line_chart(price_data)
-
-# Display COT positioning charts
-if cot_positions:
-    st.subheader("COT Non-Commercial Positioning")
-    cot_df = pd.DataFrame([{
-        'Currency': curr,
-        'Net Position': data['Net Position']
-    } for curr, data in cot_positions.items() if 'Net Position' in data])
-    
-    if not cot_df.empty:
-        st.bar_chart(cot_df.set_index('Currency')['Net Position'])
+    # Convert to DataFrame and display
+    if not budget_data.empty:
+        st.title("US Budget Balance Forecast")
+        st.dataframe(budget_data)
+        
+        # Extract 2025 forecast if available
+        if 2025 in budget_data.index:
+            forecast_2025 = budget_data.loc[2025]['Budget Balance (% of GDP)']
+            st.metric("2025 Budget Balance Forecast (% of GDP)", f"{forecast_2025:.1f}%")
+        else:
+            st.warning("2025 forecast not available in the data")
     else:
-        st.write("No COT positioning data available")
-else:
-    st.write("COT data could not be fetched")
+        st.warning("No budget balance data available")
+
+except Exception as e:
+    st.error(f"Error fetching budget balance data: {str(e)}")
+
