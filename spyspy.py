@@ -2,39 +2,42 @@ import streamlit as st
 import requests
 import pandas as pd
 
+
 st.title("South Africa 2025 GDP Growth Forecast")
 
 try:
-    # Base URL for IMF WEO database
-    base_url = "http://dataservices.imf.org/REST/SDMX_JSON.svc/CompactData/WEO"
+    # World Bank API endpoint for GDP growth
+    url = "http://api.worldbank.org/v2/country/ZAF/indicator/NY.GDP.MKTP.KD.ZG"
     
-    # Indicator for Real GDP Growth
-    indicator_code = 'NGDP_RPCH'
-    country_code = 'ZAF'  # South Africa's country code
-    
-    # Construct URL
-    url = f"{base_url}/{indicator_code}/{country_code}?startPeriod=2025&endPeriod=2025"
-    
-    # Make request
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        'Accept': 'application/json'
+    # Parameters for the API request
+    params = {
+        "format": "json",
+        "per_page": "100",  # Get more data than needed to ensure we have our date range
+        "date": "2025"  # Specific year
     }
     
-    response = requests.get(url, headers=headers)
+    # Make the API request
+    response = requests.get(url, params=params)
+    response.raise_for_status()  # Raise an error for bad responses
     
-    if response.status_code == 200:
-        json_data = response.json()
-        value = float(json_data['CompactData']['DataSet']['Series']['Obs']['@value'])
-        
-        # Display metric
-        st.metric(
-            label="South Africa Real GDP Growth (2025)",
-            value=f"{value:.1f}%"
-        )
-    else:
-        st.error("Failed to fetch GDP growth forecast")
+    # Parse the JSON response
+    data = response.json()[1]  # World Bank returns metadata in [0] and data in [1]
+    
+    # Convert to DataFrame
+    df = pd.DataFrame(data)
+    df['date'] = pd.to_datetime(df['date'], format='%Y')
+    df['value'] = pd.to_numeric(df['value'])
+    df = df.sort_values('date')
+    
+    # Get the 2025 value
+    gdp_2025 = df[df['date'].dt.year == 2025]['value'].iloc[0]
+    
+    # Display result
+    st.metric(
+        label="South Africa Real GDP Growth (2025)",
+        value=f"{gdp_2025:.1f}%"
+    )
 
 except Exception as e:
-    st.error(f"Error: {str(e)}")
+    st.error(f"Error fetching data from World Bank API: {str(e)}")
     st.write("URL attempted:", url)
