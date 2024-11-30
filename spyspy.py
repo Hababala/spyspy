@@ -19,6 +19,10 @@ try:
     # Ensure the index is a DatetimeIndex
     df.index = pd.to_datetime(df.index)
 
+    # Display the entire DataFrame for debugging
+    st.subheader("Full CPI Data")
+    st.dataframe(df)
+
     # Filter for 2023 data
     cpi_2023 = df[df.index.year == 2023]
     
