@@ -1,11 +1,17 @@
 import streamlit as st
 import os
 import sys
+import subprocess
 
 st.title("US Real GDP Growth 2023")
 
+# Debug info at startup
+st.write("Python version:", sys.version)
+st.write("Current working directory:", os.getcwd())
+
 try:
     from openbb import obb
+    st.write("OpenBB imported successfully")
     
     # Initialize OpenBB authentication
     if 'openbb_authenticated' not in st.session_state:
@@ -22,11 +28,19 @@ try:
             st.write("Python path:", sys.executable)
             st.write("OpenBB path:", os.path.dirname(obb.__file__))
             
+            # Try to fix permissions before login
+            openbb_dir = os.path.dirname(obb.__file__)
+            try:
+                subprocess.run(['chmod', '-R', '777', openbb_dir])
+            except:
+                st.write("Could not modify permissions (this is expected in cloud environment)")
+            
             obb.account.login(pat=api_key)
             st.session_state.openbb_authenticated = True
             return True
         except Exception as e:
             st.error(f"Failed to authenticate with OpenBB: {str(e)}")
+            st.write("Full error:", repr(e))
             return False
 
     if not st.session_state.openbb_authenticated:
@@ -44,8 +58,9 @@ try:
     else:
         st.error("No GDP data available for 2023")
 
-except ImportError:
-    st.error("Failed to import OpenBB. Please check installation.")
+except ImportError as e:
+    st.error(f"Failed to import OpenBB: {str(e)}")
+    st.write("Import error details:", repr(e))
 except Exception as e:
     st.error(f"Error: {str(e)}")
-    st.write("Python version:", sys.version)
+    st.write("Full error details:", repr(e))
