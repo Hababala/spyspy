@@ -1,23 +1,10 @@
-import os
-import sys
 import streamlit as st
 import plotly.graph_objects as go
 import yfinance as yf  
 import numpy as np
 from scipy import stats
 import pandas as pd
-
-# Set up environment before any OpenBB imports
-os.environ["OPENBB_USER_PATH"] = "/tmp/openbb_user"
-os.environ["OPENBB_NO_PACKAGE_CACHE"] = "true"  # Prevent package cache writing
-os.makedirs("/tmp/openbb_user", exist_ok=True)
-
-# Now try to import OpenBB
-try:
-    from openbb import obb
-except PermissionError:
-    st.error("OpenBB initialization failed. Please contact support.")
-    st.stop()
+from openbb import obb
 
 st.title("US Budget Balance Forecast")
 
