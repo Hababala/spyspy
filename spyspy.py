@@ -7,7 +7,7 @@ st.title("US Budget Balance Forecast")
 api_token = "95f02e5d4dcd471ad575cd2ef8298d92b6d4d318"
 
 # Define the endpoint and parameters
-url = "https://api.econdb.com/v1/forecast/budget_balance"
+url = "https://www.econdb.com/api/forecast/budget_balance"
 params = {
     "country": "united states",
     "forecast": True,
@@ -18,6 +18,10 @@ try:
     # Make the request to the EconDB API
     response = requests.get(url, params=params)
     response.raise_for_status()  # Raise an error for bad responses
+    
+    # Print response for debugging
+    st.write("Response Status:", response.status_code)
+    st.write("Response Headers:", dict(response.headers))
 
     # Parse the JSON response
     data = response.json()
@@ -35,6 +39,7 @@ try:
             st.warning("2025 forecast not available in the data")
     else:
         st.warning("No budget balance data available")
+        st.write("Full Response:", data)  # Debug information
 
 except requests.exceptions.RequestException as e:
     st.error(f"Error fetching data from EconDB: {str(e)}")
