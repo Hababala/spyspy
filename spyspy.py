@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import plotly.graph_objects as go
 import yfinance as yf  
@@ -10,10 +11,10 @@ st.title("US Budget Balance Forecast")
 
 # Initialize OpenBB with API key directly
 try:
-    api_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiTUJFNDhxaEtHYWlmdHJKVlN0eWZoVktxNmZlMGE5am41aGVnWkxDbiIsImV4cCI6MTc2Mjg5MzIyMH0.48URoFcEJ2dWF2SpWyj0B8MR-mBY8nc5lliHBuNR8bo"
-    obb.account.login(pat=api_key)
+    # Set up OpenBB credentials
+    obb.user.credentials.econdb_api_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiTUJFNDhxaEtHYWlmdHJKVlN0eWZoVktxNmZlMGE5am41aGVnWkxDbiIsImV4cCI6MTc2Mjg5MzIyMH0.48URoFcEJ2dWF2SpWyj0B8MR-mBY8nc5lliHBuNR8bo"
     
-    # Fetch US budget balance forecast
+    # Then proceed with your data fetch
     budget_data = obb.economy.fiscal.balance(country="united states", forecast=True)
     
     if not budget_data.empty:
