@@ -1,61 +1,102 @@
 import streamlit as st
 import pandas as pd
 import requests
-from datetime import datetime
+import numpy as np
 
-st.title("Germany GDP Growth Rate (2020-2024)")
+st.title("Economic Indicators Comparison (2024-2025)")
+
+# Country codes and indicators
+countries = {
+    'BRA': 'Brazil',
+    'ZAF': 'South Africa',
+    'KAZ': 'Kazakhstan'
+}
+
+indicators = {
+    'FP.CPI.TOTL.ZG': 'CPI (%)',
+    'BN.CAB.XOKA.GD.ZS': 'Current Account (% of GDP)',
+    'GC.BAL.CASH.GD.ZS': 'Budget Balance (% of GDP)',
+    'NY.GDP.MKTP.KD.ZG': 'Real GDP Growth (%)'
+}
 
 try:
-    # World Bank API endpoint for GDP growth
-    # NY.GDP.MKTP.KD.ZG is the indicator code for real GDP growth
-    url = "http://api.worldbank.org/v2/country/DEU/indicator/NY.GDP.MKTP.KD.ZG"
+    # Initialize data storage
+    data_dict = {}
     
-    # Parameters for the API request
-    params = {
-        "format": "json",
-        "per_page": "100",  # Get more data than needed to ensure we have our date range
-        "date": "2020:2024"  # Date range
-    }
+    # Fetch data for each country and indicator
+    for country_code in countries.keys():
+        data_dict[country_code] = {}
+        
+        for indicator_code in indicators.keys():
+            # World Bank API endpoint
+            url = f"http://api.worldbank.org/v2/country/{country_code}/indicator/{indicator_code}"
+            
+            params = {
+                "format": "json",
+                "per_page": "100",
+                "date": "2024:2025"  # Get both 2024 and 2025 data
+            }
+            
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            
+            # Extract data
+            data = response.json()[1]
+            df = pd.DataFrame(data)
+            df['value'] = pd.to_numeric(df['value'])
+            data_dict[country_code][indicator_code] = df
     
-    # Make the API request
-    response = requests.get(url, params=params)
-    response.raise_for_status()  # Raise an error for bad responses
+    # Create comparison table
+    comparison_data = []
     
-    # Parse the JSON response
-    data = response.json()[1]  # World Bank returns metadata in [0] and data in [1]
+    for country_code, country_name in countries.items():
+        row_2024 = {'Country': country_name, 'Year': 2024}
+        row_2025 = {'Country': country_name, 'Year': 2025}
+        row_delta = {'Country': f'{country_name} Δ', 'Year': '2025-2024'}
+        
+        for indicator_code, indicator_name in indicators.items():
+            df = data_dict[country_code][indicator_code]
+            
+            val_2024 = df[df['date'] == '2024']['value'].iloc[0] if not df[df['date'] == '2024'].empty else np.nan
+            val_2025 = df[df['date'] == '2025']['value'].iloc[0] if not df[df['date'] == '2025'].empty else np.nan
+            delta = val_2025 - val_2024 if (not np.isnan(val_2024) and not np.isnan(val_2025)) else np.nan
+            
+            row_2024[indicator_name] = val_2024
+            row_2025[indicator_name] = val_2025
+            row_delta[indicator_name] = delta
+        
+        comparison_data.extend([row_2024, row_2025, row_delta])
     
-    # Convert to DataFrame
-    df = pd.DataFrame(data)
-    df['date'] = pd.to_datetime(df['date'], format='%Y')
-    df['value'] = pd.to_numeric(df['value'])
-    df = df.sort_values('date')
+    # Create and style the DataFrame
+    comparison_df = pd.DataFrame(comparison_data)
     
-    # Display the data
-    st.subheader("GDP Growth Rate Data")
-    display_df = df[['date', 'value']].copy()
-    display_df.columns = ['Year', 'Growth Rate (%)']
-    st.dataframe(display_df)
+    # Style the DataFrame
+    def style_negative(v):
+        return 'color: red' if v < 0 else 'color: green'
     
-    # Get the most recent actual value (not null)
-    latest = df[df['value'].notna()].iloc[-1]
-    st.metric(
-        label=f"Latest GDP Growth Rate ({latest['date'].year})",
-        value=f"{latest['value']:.1f}%"
-    )
+    styled_df = comparison_df.style\
+        .format({col: '{:.1f}' for col in indicators.values()})\
+        .applymap(style_negative, subset=list(indicators.values()))\
+        .set_properties(**{'background-color': '#f0f2f6', 'color': 'black'})\
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', '#0e1117'), ('color', 'white')]},
+            {'selector': 'tr:nth-child(3n)', 'props': [('background-color', '#e6e9f0')]}
+        ])
     
-    # Plot the time series
-    st.subheader("GDP Growth Rate Trend")
-    st.line_chart(df.set_index('date')['value'])
+    # Display the table
+    st.subheader("Economic Indicators Comparison")
+    st.dataframe(styled_df, use_container_width=True)
     
-    # Add some context
+    # Add context
     st.markdown("""
-    **Note:**
-    - Values after 2023 are projections
-    - Negative values indicate economic contraction
-    - Data source: World Bank
+    **Notes:**
+    - All values are projections from World Bank data
+    - Δ represents the change from 2024 to 2025
+    - Green values are positive, red values are negative
+    - CPI: Consumer Price Index
+    - Current Account and Budget Balance are shown as percentage of GDP
     """)
 
 except Exception as e:
-    st.error(f"Error fetching data from World Bank API: {str(e)}")
-    st.write("URL attempted:", url)
+    st.error(f"Error fetching data: {str(e)}")
 
