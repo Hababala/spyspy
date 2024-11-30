@@ -40,13 +40,28 @@ try:
             response = requests.get(url, params=params)
             response.raise_for_status()
             
-            # Extract data
-            data = response.json()[1]
-            df = pd.DataFrame(data)
-            df['value'] = pd.to_numeric(df['value'])
-            data_dict[country_code][indicator_code] = df
+            # Extract data with error checking
+            json_data = response.json()
+            
+            # Debug information
+            st.write(f"Fetching data for {countries[country_code]} - {indicators[indicator_code]}")
+            st.write("API Response:", json_data)
+            
+            # Check if data exists and has the expected format
+            if len(json_data) > 1 and json_data[1] is not None:
+                data = json_data[1]
+                df = pd.DataFrame(data)
+                if not df.empty:
+                    df['value'] = pd.to_numeric(df['value'])
+                    data_dict[country_code][indicator_code] = df
+                else:
+                    st.warning(f"No data available for {countries[country_code]} - {indicators[indicator_code]}")
+                    data_dict[country_code][indicator_code] = pd.DataFrame({'date': ['2024', '2025'], 'value': [np.nan, np.nan]})
+            else:
+                st.warning(f"No data available for {countries[country_code]} - {indicators[indicator_code]}")
+                data_dict[country_code][indicator_code] = pd.DataFrame({'date': ['2024', '2025'], 'value': [np.nan, np.nan]})
     
-    # Create comparison table
+    # Rest of the code remains the same
     comparison_data = []
     
     for country_code, country_name in countries.items():
@@ -95,6 +110,7 @@ try:
     - Green values are positive, red values are negative
     - CPI: Consumer Price Index
     - Current Account and Budget Balance are shown as percentage of GDP
+    - Empty cells indicate no data available
     """)
 
 except Exception as e:
