@@ -7,11 +7,10 @@ st.title("US Budget Balance Forecast")
 api_token = "95f02e5d4dcd471ad575cd2ef8298d92b6d4d318"
 
 # Define the endpoint and parameters
-url = "https://www.econdb.com/api/forecast/budget_balance"
+url = "https://www.econdb.com/api/series/USGBAL"
 params = {
-    "country": "united states",
-    "forecast": True,
-    "api_token": api_token
+    "api_token": api_token,
+    "format": "json"
 }
 
 try:
@@ -26,17 +25,21 @@ try:
     # Parse the JSON response
     data = response.json()
 
+    # Display raw data for debugging
+    st.write("Raw Response:", data)
+
     # Check if data is available
     if data and "data" in data:
         budget_data = data["data"]
         st.dataframe(budget_data)
 
-        # Extract 2025 forecast if available
-        forecast_2025 = next((item for item in budget_data if item["year"] == 2025), None)
-        if forecast_2025:
-            st.metric("2025 Budget Balance Forecast (% of GDP)", f"{forecast_2025['value']:.1f}%")
-        else:
-            st.warning("2025 forecast not available in the data")
+        # Try to find the most recent forecast
+        if isinstance(budget_data, list):
+            # Sort by date/period if available
+            recent_data = sorted(budget_data, key=lambda x: x.get("period", ""), reverse=True)
+            if recent_data:
+                st.metric("Most Recent Budget Balance", f"{recent_data[0]['value']:.1f}%")
+        
     else:
         st.warning("No budget balance data available")
         st.write("Full Response:", data)  # Debug information
