@@ -1,59 +1,40 @@
-import requests
 import streamlit as st
+import pandas as pd
 
 st.title("Germany CPI 2023")
 
 # Your EconDB API token
 api_token = "95f02e5d4dcd471ad575cd2ef8298d92b6d4d318"
 
-# Define the endpoint and parameters
-url = "https://www.econdb.com/api/series/DECPI"  # DE for Germany, CPI for Consumer Price Index
-headers = {
-    "Authorization": f"Token {api_token}"  # Try passing token in header
-}
-params = {
-    "format": "json"
-}
+# Define the ticker for Germany's CPI
+ticker = 'DECPI'
 
 try:
-    # Make the request to the EconDB API
-    response = requests.get(url, headers=headers, params=params)
-    response.raise_for_status()  # Raise an error for bad responses
+    # Fetch the data using pandas
+    df = pd.read_csv(
+        f"https://www.econdb.com/api/series/{ticker}/?format=csv&token={api_token}", 
+        index_col='Date', parse_dates=['Date']
+    )
     
-    # Print response for debugging
-    st.write("Response Status:", response.status_code)
-    st.write("Response Headers:", dict(response.headers))
-
-    # Parse the JSON response
-    data = response.json()
-
-    # Display raw data for debugging
-    st.write("Raw Response:", data)
-
-    # Check if data is available and filter for 2023
-    if data and "data" in data:
-        cpi_data = data["data"]
-        cpi_2023 = [d for d in cpi_data if d.get("period", "").startswith("2023")]
+    # Filter for 2023 data
+    cpi_2023 = df[df.index.year == 2023]
+    
+    if not cpi_2023.empty:
+        st.subheader("Germany CPI Data 2023")
+        st.dataframe(cpi_2023)
         
-        if cpi_2023:
-            st.subheader("Germany CPI Data 2023")
-            st.dataframe(cpi_2023)
-            
-            # Get the most recent value
-            latest = cpi_2023[-1]
-            st.metric(
-                label=f"Latest CPI (Period: {latest['period']})", 
-                value=f"{latest['value']:.1f}"
-            )
-        else:
-            st.warning("No 2023 CPI data available")
+        # Get the most recent value
+        latest = cpi_2023.iloc[-1]
+        st.metric(
+            label=f"Latest CPI (Date: {latest.name.strftime('%Y-%m-%d')})", 
+            value=f"{latest['Value']:.1f}"
+        )
+        
+        # Plot the data
+        st.line_chart(cpi_2023['Value'])
     else:
-        st.warning("No CPI data available")
-        st.write("Full Response:", data)
+        st.warning("No 2023 CPI data available")
 
-except requests.exceptions.RequestException as e:
+except Exception as e:
     st.error(f"Error fetching data from EconDB: {str(e)}")
-    # Add more debug information
-    st.write("URL:", response.url)
-    st.write("Headers sent:", headers)
 
