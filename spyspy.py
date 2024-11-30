@@ -6,8 +6,8 @@ st.title("US GDP 2022-2023")
 # Your EconDB API token
 api_token = "95f02e5d4dcd471ad575cd2ef8298d92b6d4d318"
 
-# Define the ticker for US GDP
-ticker = 'USGDP'
+# Define the ticker for US GDP (using RGDPUS instead of USGDP)
+ticker = 'RGDPUS'
 
 try:
     # Fetch the data using pandas
