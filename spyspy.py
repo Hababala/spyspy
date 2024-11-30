@@ -1,24 +1,25 @@
 import streamlit as st
-import os
+import plotly.graph_objects as go
+import yfinance as yf  
+import numpy as np
+from scipy import stats
+import pandas as pd
 from openbb import obb
-import tempfile
 
 st.title("US Budget Balance Forecast")
 
-# Initialize OpenBB authentication with temporary directory
+# Initialize OpenBB authentication
 if 'openbb_authenticated' not in st.session_state:
     st.session_state.openbb_authenticated = False
 
 def init_openbb():
     try:
-        # Set up temporary directory for OpenBB
-        temp_dir = tempfile.mkdtemp()
-        os.environ['OPENBB_USER_DATA_DIR'] = temp_dir
+        if 'OPENBB_API_KEY' in st.secrets:
+            api_key = st.secrets['OPENBB_API_KEY']
+        else:
+            # Use the hardcoded key as fallback
+            api_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiTUJFNDhxaEtHYWlmdHJKVlN0eWZoVktxNmZlMGE5am41aGVnWkxDbiIsImV4cCI6MTc2Mjg5MzIyMH0.48URoFcEJ2dWF2SpWyj0B8MR-mBY8nc5lliHBuNR8bo"
         
-        # Use the same API key as in world.py
-        api_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdXRoX3Rva2VuIjoiTUJFNDhxaEtHYWlmdHJKVlN0eWZoVktxNmZlMGE5am41aGVnWkxDbiIsImV4cCI6MTc2Mjg5MzIyMH0.48URoFcEJ2dWF2SpWyj0B8MR-mBY8nc5lliHBuNR8bo"
-        
-        # Initialize OpenBB
         obb.account.login(pat=api_key)
         st.session_state.openbb_authenticated = True
         return True
