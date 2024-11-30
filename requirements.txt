@@ -1,4 +1,4 @@
-openbb==3.2.5
+openbb
 streamlit>=1.40.2
 pandas
 numpy
